@@ -13,7 +13,7 @@ router.get("/", auth, async (req, res) => {
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:M`, // includes Taskcompletedapproval
+      range: `${SHEET_NAME}!A2:M`,
     });
 
     const rows = fetch.data.values || [];
@@ -33,16 +33,15 @@ router.get("/", auth, async (req, res) => {
         Priority: r[9],
         Status: r[10] || "Pending",
         Followup: r[11] || "",
-        Taskcompletedapproval: r[12] || "", // NEW COLUMN
+        Taskcompletedapproval: r[12] || "Pending",
       }))
       .filter(
         (t) =>
           !(
             t.Status === "Completed" &&
-            t.Taskcompletedapproval &&
-            t.Taskcompletedapproval !== ""
+            t.Taskcompletedapproval === "Approved"
           )
-      ); // ❌ Hide completed+approved tasks from frontend
+      ); // hide approved tasks
 
     res.json(tasks);
   } catch (err) {
@@ -78,7 +77,7 @@ router.post("/", auth, async (req, res) => {
             Priority,
             "Pending",
             Notes,
-            "", // Taskcompletedapproval blank
+            "Pending", // approval always pending initially
           ],
         ],
       },
@@ -108,7 +107,7 @@ router.patch("/done/:id", auth, async (req, res) => {
 
     rows[idx][7] = new Date().toISOString(); // FinalDate
     rows[idx][10] = "Completed"; // Status
-    rows[idx][12] = "Approved"; // NEW: Taskcompletedapproval
+    rows[idx][12] = "Pending"; // Approval now pending (NOT approved!)
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -123,7 +122,7 @@ router.patch("/done/:id", auth, async (req, res) => {
   }
 });
 
-/* -------------------------- SHIFT -------------------------- */
+/* -------------------------- SHIFT TASK -------------------------- */
 router.patch("/shift/:id", auth, async (req, res) => {
   try {
     const { newDeadline, revisionField } = req.body;
@@ -142,8 +141,40 @@ router.patch("/shift/:id", auth, async (req, res) => {
 
     rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
 
-    rows[idx][8] = Number(rows[idx][8] || 0) + 1; // Revision count
+    rows[idx][8] = Number(rows[idx][8] || 0) + 1;
     rows[idx][10] = "Shifted";
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${SHEET_NAME}!A${idx + 2}:M${idx + 2}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rows[idx]] },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* -------------------------- TL APPROVE TASK -------------------------- */
+router.patch("/approve/:id", auth, async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const sheets = await getSheets();
+    const fetch = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${SHEET_NAME}!A2:M`,
+    });
+
+    const rows = fetch.data.values || [];
+
+    const idx = rows.findIndex((r) => r[0] === id);
+
+    if (idx === -1) return res.status(404).json({ error: "Task not found" });
+
+    rows[idx][12] = "Approved"; // TL approved task
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
