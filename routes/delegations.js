@@ -7,18 +7,19 @@ const router = express.Router();
 
 const SHEET_NAME = "DelegationMaster";
 
-// Get tasks for logged-in user
+/* -------------------------- GET TASKS -------------------------- */
 router.get("/", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:L`,
+      range: `${SHEET_NAME}!A2:M`, // includes Taskcompletedapproval
     });
 
     const rows = fetch.data.values || [];
+
     const tasks = rows
-      .filter((r) => r[1] === req.user.name) // Filter by employee name
+      .filter((r) => r[1] === req.user.name)
       .map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -32,7 +33,16 @@ router.get("/", auth, async (req, res) => {
         Priority: r[9],
         Status: r[10] || "Pending",
         Followup: r[11] || "",
-      }));
+        Taskcompletedapproval: r[12] || "", // NEW COLUMN
+      }))
+      .filter(
+        (t) =>
+          !(
+            t.Status === "Completed" &&
+            t.Taskcompletedapproval &&
+            t.Taskcompletedapproval !== ""
+          )
+      ); // ❌ Hide completed+approved tasks from frontend
 
     res.json(tasks);
   } catch (err) {
@@ -40,17 +50,18 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// Create new task
+/* -------------------------- CREATE TASK -------------------------- */
 router.post("/", auth, async (req, res) => {
   try {
     const { TaskName, Deadline, Priority, Notes } = req.body;
+
     const TaskID = nanoid(6);
     const CreatedDate = new Date().toISOString();
 
     const sheets = await getSheets();
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A:L`,
+      range: `${SHEET_NAME}!A:M`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
@@ -67,6 +78,7 @@ router.post("/", auth, async (req, res) => {
             Priority,
             "Pending",
             Notes,
+            "", // Taskcompletedapproval blank
           ],
         ],
       },
@@ -78,28 +90,29 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// Mark task done
+/* -------------------------- MARK DONE -------------------------- */
 router.patch("/done/:id", auth, async (req, res) => {
   try {
-    const taskId = req.params.id;
+    const id = req.params.id;
     const sheets = await getSheets();
 
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:L`,
+      range: `${SHEET_NAME}!A2:M`,
     });
 
     const rows = fetch.data.values || [];
-    const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
+    const idx = rows.findIndex((r) => r[0] === id && r[1] === req.user.name);
 
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
     rows[idx][7] = new Date().toISOString(); // FinalDate
     rows[idx][10] = "Completed"; // Status
+    rows[idx][12] = "Approved"; // NEW: Taskcompletedapproval
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
+      range: `${SHEET_NAME}!A${idx + 2}:M${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
     });
@@ -110,62 +123,33 @@ router.patch("/done/:id", auth, async (req, res) => {
   }
 });
 
-// Shift task (Revision1 / Revision2)
+/* -------------------------- SHIFT -------------------------- */
 router.patch("/shift/:id", auth, async (req, res) => {
   try {
-    const { newDeadline, revisionField } = req.body; // revisionField = Revision1 or Revision2
-    const taskId = req.params.id;
+    const { newDeadline, revisionField } = req.body;
+    const id = req.params.id;
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:L`,
+      range: `${SHEET_NAME}!A2:M`,
     });
 
     const rows = fetch.data.values || [];
-    const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
+    const idx = rows.findIndex((r) => r[0] === id && r[1] === req.user.name);
+
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Update revision field
     rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
 
-    // Update Revisions count
-    const revCount = (rows[idx][8] ? parseInt(rows[idx][8]) : 0) + 1;
-    rows[idx][8] = revCount;
-
-    // Update Status
+    rows[idx][8] = Number(rows[idx][8] || 0) + 1; // Revision count
     rows[idx][10] = "Shifted";
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
+      range: `${SHEET_NAME}!A${idx + 2}:M${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
-    });
-
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete task (optional)
-router.delete("/:id", auth, async (req, res) => {
-  try {
-    const taskId = req.params.id;
-    const sheets = await getSheets();
-    const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:L`,
-    });
-
-    const rows = fetch.data.values || [];
-    const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
-    if (idx === -1) return res.status(404).json({ error: "Task not found" });
-
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
     });
 
     res.json({ ok: true });

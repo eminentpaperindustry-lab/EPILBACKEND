@@ -27,6 +27,9 @@ router.post("/register", async (req, res) => {
     });
 
     const employees = empRes.data.values || [];
+      if (employees.find((e) => e[1] === name)) {
+      return res.status(400).json({ error: "UserName already registered" });
+    }
 
     if (employees.find((e) => e[2] === mobile)) {
       return res.status(400).json({ error: "Mobile already registered" });
