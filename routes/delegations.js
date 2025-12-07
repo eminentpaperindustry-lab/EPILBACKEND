@@ -32,7 +32,7 @@ router.get("/", auth, async (req, res) => {
         FinalDate: r[7],
         Revisions: parseInt(r[8]) || 0,
         Priority: r[9],
-        Taskcompletedapproval:r[13],
+        Taskcompletedapproval:"NotApproved",
         Status: r[10] || "Pending",
         Followup: r[11] || "",
       }));
