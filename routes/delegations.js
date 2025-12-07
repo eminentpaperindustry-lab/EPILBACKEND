@@ -13,10 +13,12 @@ router.get("/", auth, async (req, res) => {
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:L`,
+      range: `${SHEET_NAME}!A2:O`,
     });
 
     const rows = fetch.data.values || [];
+    console.log("fetch.data.values:",fetch.data.values);
+    
     const tasks = rows
       .filter((r) => r[1] === req.user.name) // Filter by employee name
       .map((r) => ({
@@ -30,6 +32,7 @@ router.get("/", auth, async (req, res) => {
         FinalDate: r[7],
         Revisions: parseInt(r[8]) || 0,
         Priority: r[9],
+        Taskcompletedapproval:r[13],
         Status: r[10] || "Pending",
         Followup: r[11] || "",
       }));
