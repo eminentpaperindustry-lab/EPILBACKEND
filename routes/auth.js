@@ -102,85 +102,85 @@ router.post("/register", async (req, res) => {
 // =====================================================
 // CREATE PERSONAL HELPTICKET SHEET
 // =====================================================
-const helpTicketSheetTitle = `${name}_HelpTickets`;
+// const helpTicketSheetTitle = `${name}_HelpTickets`;
 
 // Add new sheet
-await sheets.spreadsheets.batchUpdate({
-  spreadsheetId: process.env.GOOGLE_SHEET_ID,
-  requestBody: {
-    requests: [
-      {
-        addSheet: {
-          properties: {
-            title: helpTicketSheetTitle,
-          },
-        },
-      },
-    ],
-  },
-});
+// await sheets.spreadsheets.batchUpdate({
+//   spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//   requestBody: {
+//     requests: [
+//       {
+//         addSheet: {
+//           properties: {
+//             title: helpTicketSheetTitle,
+//           },
+//         },
+//       },
+//     ],
+//   },
+// });
 
 // Add column headers
-await sheets.spreadsheets.values.update({
-  spreadsheetId: process.env.GOOGLE_SHEET_ID,
-  range: `${helpTicketSheetTitle}!A1:G1`,
-  valueInputOption: "USER_ENTERED",
-  requestBody: {
-    values: [
-      [
-        "TicketID",
-        "Issue",
-        "CreatedName",
-        "AssignedTo",
-        "CreatedDate",
-        "DoneDate",
-        "Status",
-      ],
-    ],
-  },
-});
+// await sheets.spreadsheets.values.update({
+//   spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//   range: `${helpTicketSheetTitle}!A1:G1`,
+//   valueInputOption: "USER_ENTERED",
+//   requestBody: {
+//     values: [
+//       [
+//         "TicketID",
+//         "Issue",
+//         "CreatedName",
+//         "AssignedTo",
+//         "CreatedDate",
+//         "DoneDate",
+//         "Status",
+//       ],
+//     ],
+//   },
+// });
 
 
     // =====================================================
     // CREATE PERSONAL DELEGATION SHEET
     // =====================================================
-    const delegationSheetTitle = `${name}_Delegations`;
+    // const delegationSheetTitle = `${name}_Delegations`;
 
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      requestBody: {
-        requests: [
-          {
-            addSheet: {
-              properties: {
-                title: delegationSheetTitle,
-              },
-            },
-          },
-        ],
-      },
-    });
+    // await sheets.spreadsheets.batchUpdate({
+    //   spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    //   requestBody: {
+    //     requests: [
+    //       {
+    //         addSheet: {
+    //           properties: {
+    //             title: delegationSheetTitle,
+    //           },
+    //         },
+    //       },
+    //     ],
+    //   },
+    // });
 
     // Add column headers
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${delegationSheetTitle}!A1:H1`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          [
-            "TaskID",
-            "TaskName",
-            "CreatedDate",
-            "Deadline",
-            "DoneDate",
-            "Status",
-            "Priority",
-            "Notes",
-          ],
-        ],
-      },
-    });
+    // await sheets.spreadsheets.values.update({
+    //   spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    //   range: `${delegationSheetTitle}!A1:H1`,
+    //   valueInputOption: "USER_ENTERED",
+    //   requestBody: {
+    //     values: [
+    //       [
+    //         "TaskID",
+    //         "TaskName",
+    //         "CreatedDate",
+    //         "Deadline",
+    //         "DoneDate",
+    //         "Status",
+    //         "Priority",
+    //         "Notes",
+    //       ],
+    //     ],
+    //   },
+    // });
 
     // -------------------------------
     // RESPONSE
