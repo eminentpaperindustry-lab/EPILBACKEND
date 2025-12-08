@@ -7,14 +7,19 @@ const router = express.Router();
 
 const SHEET_NAME = "DelegationMaster";
 
+<<<<<<< HEAD
 // =========================
 //  GET TASKS for Logged User
 // =========================
+=======
+// Get tasks for logged-in user
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
 router.get("/", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+<<<<<<< HEAD
       range: `${SHEET_NAME}!A2:O`, // A to N (0–13)
     });
 
@@ -22,6 +27,16 @@ router.get("/", auth, async (req, res) => {
 
     const tasks = rows
       .filter((r) => r[1] === req.user.name)
+=======
+      range: `${SHEET_NAME}!A2:O`,
+    });
+
+    const rows = fetch.data.values || [];
+    console.log("fetch.data.values:",fetch.data.values);
+    
+    const tasks = rows
+      .filter((r) => r[1] === req.user.name) // Filter by employee name
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
       .map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -33,9 +48,15 @@ router.get("/", auth, async (req, res) => {
         FinalDate: r[7],
         Revisions: parseInt(r[8]) || 0,
         Priority: r[9],
+<<<<<<< HEAD
         Status: r[10] || "Pending",
         Followup: r[11] || "",
         Taskcompletedapproval: r[13] || "Pending", // FIXED INDEX
+=======
+        Taskcompletedapproval:"NotApproved",
+        Status: r[10] || "Pending",
+        Followup: r[11] || "",
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
       }));
 
     res.json(tasks);
@@ -44,10 +65,14 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 // =========================
 //      CREATE NEW TASK
 // =========================
+=======
+// Create new task
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
 router.post("/", auth, async (req, res) => {
   try {
     const { TaskName, Deadline, Priority, Notes } = req.body;
@@ -57,11 +82,16 @@ router.post("/", auth, async (req, res) => {
     const sheets = await getSheets();
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+<<<<<<< HEAD
       range: `${SHEET_NAME}!A:N`,
+=======
+      range: `${SHEET_NAME}!A:L`,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
           [
+<<<<<<< HEAD
             TaskID,         // 0
             req.user.name,  // 1
             TaskName,       // 2
@@ -76,6 +106,20 @@ router.post("/", auth, async (req, res) => {
             Notes,          // 11 Followup
             "",             // 12 (Ignored Column)
             "Pending"       // 13 Taskcompletedapproval (FIXED)
+=======
+            TaskID,
+            req.user.name,
+            TaskName,
+            CreatedDate,
+            Deadline,
+            "",
+            "",
+            "",
+            0,
+            Priority,
+            "Pending",
+            Notes,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
           ],
         ],
       },
@@ -87,10 +131,14 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 // =========================
 //         TASK DONE
 // =========================
+=======
+// Mark task done
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
 router.patch("/done/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
@@ -98,7 +146,11 @@ router.patch("/done/:id", auth, async (req, res) => {
 
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+<<<<<<< HEAD
       range: `${SHEET_NAME}!A2:O`,
+=======
+      range: `${SHEET_NAME}!A2:L`,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
     });
 
     const rows = fetch.data.values || [];
@@ -106,12 +158,21 @@ router.patch("/done/:id", auth, async (req, res) => {
 
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
+<<<<<<< HEAD
     rows[idx][7] = new Date().toISOString(); // Final Date index = 7
     rows[idx][10] = "Completed";             // Status index = 10
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
       range: `${SHEET_NAME}!A${idx + 2}:N${idx + 2}`,
+=======
+    rows[idx][7] = new Date().toISOString(); // FinalDate
+    rows[idx][10] = "Completed"; // Status
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
     });
@@ -122,6 +183,7 @@ router.patch("/done/:id", auth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 // =========================
 //       SHIFT TASK
@@ -129,28 +191,53 @@ router.patch("/done/:id", auth, async (req, res) => {
 router.patch("/shift/:id", auth, async (req, res) => {
   try {
     const { newDeadline, revisionField } = req.body;
+=======
+// Shift task (Revision1 / Revision2)
+router.patch("/shift/:id", auth, async (req, res) => {
+  try {
+    const { newDeadline, revisionField } = req.body; // revisionField = Revision1 or Revision2
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
     const taskId = req.params.id;
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+<<<<<<< HEAD
       range: `${SHEET_NAME}!A2:O`,
+=======
+      range: `${SHEET_NAME}!A2:L`,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
     });
 
     const rows = fetch.data.values || [];
     const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
+<<<<<<< HEAD
     rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
 
     const revCount = (rows[idx][8] ? parseInt(rows[idx][8]) : 0) + 1;
     rows[idx][8] = revCount;
 
+=======
+    // Update revision field
+    rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
+
+    // Update Revisions count
+    const revCount = (rows[idx][8] ? parseInt(rows[idx][8]) : 0) + 1;
+    rows[idx][8] = revCount;
+
+    // Update Status
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
     rows[idx][10] = "Shifted";
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+<<<<<<< HEAD
       range: `${SHEET_NAME}!A${idx + 2}:N${idx + 2}`,
+=======
+      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
     });
@@ -161,6 +248,7 @@ router.patch("/shift/:id", auth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 // =========================
 //   SEARCH BY NAME
@@ -249,6 +337,28 @@ router.patch("/approve/:id", auth, async (req, res) => {
 
     res.json({ ok: true, updated: rows[idx] });
 
+=======
+// Delete task (optional)
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const sheets = await getSheets();
+    const fetch = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${SHEET_NAME}!A2:L`,
+    });
+
+    const rows = fetch.data.values || [];
+    const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
+    if (idx === -1) return res.status(404).json({ error: "Task not found" });
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${SHEET_NAME}!A${idx + 2}:L${idx + 2}`,
+    });
+
+    res.json({ ok: true });
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -62,6 +62,7 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 
 // Get Specific checklist search by Name
 
@@ -110,6 +111,8 @@ router.get("/search/by-name", auth, async (req, res) => {
 });
 
 
+=======
+>>>>>>> 3541510af8ef30ff0960bb61fb13ce6f25b7cafe
 // ======================================================
 // CREATE A NEW TASK FOR USER (INSERT INTO MASTER SHEET)
 // ======================================================
