@@ -45,7 +45,7 @@ router.get("/", auth, async (req, res) => {
 // Create new task
 router.post("/", auth, async (req, res) => {
   try {
-    const { TaskName, Deadline, Priority, Notes } = req.body;
+    const { TaskName, Deadline, Priority, Notes,Name } = req.body;
     const TaskID = nanoid(6);
     const CreatedDate = new Date().toISOString();
 
@@ -58,7 +58,7 @@ router.post("/", auth, async (req, res) => {
         values: [
           [
             TaskID,
-            req.user.name,
+            Name??req.user.name,
             TaskName,
             CreatedDate,
             Deadline,
