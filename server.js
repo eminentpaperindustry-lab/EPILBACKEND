@@ -13,6 +13,8 @@ app.use(express.json());
   console.log("process.env server: ",process.env);
 
 const authRoutes = require("./routes/auth");
+const adminAuth = require("./routes/adminAuth");
+
 const delegationsRoutes = require("./routes/delegations");
 const supportTicketsRoutes = require("./routes/supportTickets");
 const checklistRoutes = require("./routes/checklist");
@@ -21,6 +23,8 @@ const helpTicketsRouter = require("./routes/helpTickets");
 
 // API prefix
 app.use("/api/auth", authRoutes);
+app.use("/api/adminauth", adminAuth);
+
 app.use("/api/delegations", delegationsRoutes);
 app.use("/api/support-tickets", supportTicketsRoutes);
 app.use("/api/checklist", checklistRoutes);
