@@ -207,7 +207,7 @@ router.patch("/approve/:id", auth, async (req, res) => {
     const rows = fetch.data.values || [];
 
     const idx = rows.findIndex(
-      (r) => r[0] === taskId && r[1] === req.user.name
+      (r) => r[0] === taskId 
     );
 
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
