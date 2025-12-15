@@ -10,7 +10,7 @@ app.use(express.json());
 
 // ROUTES
 
-  console.log("process.env server: ",process.env);
+  // console.log("process.env server: ",process.env);
 
 const authRoutes = require("./routes/auth");
 const adminAuth = require("./routes/adminAuth");

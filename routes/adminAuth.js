@@ -197,7 +197,7 @@ router.post("/admin/register", async (req, res) => {
 // LOGIN
 // =====================================================
 router.post("/admin/login", async (req, res) => {
-  console.log("process.env: ",process.env);
+  // console.log("process.env: ",process.env);
   
   try {
     const { employeeID, password } = req.body;
