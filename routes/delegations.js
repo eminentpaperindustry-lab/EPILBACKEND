@@ -230,18 +230,42 @@ router.patch("/shift/:id", auth, async (req, res) => {
 router.get("/search/by-name", auth, async (req, res) => {
   try {
     const { name } = req.query;
+
+    // If 'name' is not provided or is an empty string, return an error
     if (!name) return res.status(400).json({ error: "Name is required" });
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:R`,
+      range: `${SHEET_NAME}!A2:R`, // Adjust range as needed
     });
 
     const rows = fetch.data.values || [];
 
+    // If 'name' is "all", return all data
+    if (name.toLowerCase() === "all") {
+      const allData = rows.map((r) => ({
+        TaskID: r[0],
+        Name: r[1],
+        TaskName: r[2],
+        CreatedDate: r[3],
+        Deadline: r[4],
+        Revision1: r[5],
+        Revision2: r[6],
+        FinalDate: r[7],
+        Revisions: r[8],
+        Priority: r[9],
+        Status: r[10],
+        Followup: r[11],
+        Taskcompletedapproval: r[13] || "Pending",
+      }));
+
+      return res.json(allData); // Return all data
+    }
+
+    // Otherwise, filter by exact name (case-insensitive)
     const tasks = rows
-      .filter((r) => r[1]?.toLowerCase() === name.toLowerCase())
+      .filter((r) => r[1]?.toLowerCase() === name.toLowerCase()) // Match the name (index 1)
       .map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -258,7 +282,7 @@ router.get("/search/by-name", auth, async (req, res) => {
         Taskcompletedapproval: r[13] || "Pending",
       }));
 
-    res.json(tasks);
+    res.json(tasks); // Return the filtered tasks
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

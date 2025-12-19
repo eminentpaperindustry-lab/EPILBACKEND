@@ -82,6 +82,24 @@ router.get("/search/by-name", auth, async (req, res) => {
 
     const rows = fetchRes.data.values || [];
 
+    // If 'name' is "all", return all data
+    if (name.toLowerCase() === "all") {
+      const allData = rows.map((r) => ({
+        Name: r[0],
+        Email: r[1],
+        Department: r[2],
+        TaskID: r[3],
+        Freq: r[4],
+        Task: r[5],
+        Planned: r[6],
+        Actual: r[7],
+        EmailForBuddy: r[8],
+        BuddyEmail: r[9],
+        Archive: r[10],
+      }));
+      return res.json(allData);
+    }
+
     // FILTER BY EXACT NAME (Case-insensitive)
     const filtered = rows
       .filter((r) => r[0]?.toLowerCase() === name.toLowerCase()) // Name (index 0)
