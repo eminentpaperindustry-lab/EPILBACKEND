@@ -2,10 +2,24 @@ const express = require("express");
 const { nanoid } = require("nanoid");
 const { getSheets } = require("../googleSheetsClient");
 const auth = require("../middleware/auth");
-const { parser } = require("../cloudinary"); // Updated here
+const { parser } = require("../cloudinary");
 
 const router = express.Router();
 const SHEET_NAME = "HelpTicketsMaster";
+
+// ======================================================
+// DATE FORMATTER → dd/mm/yyyy hh:mm:ss
+// ======================================================
+function formatDateDDMMYYYYHHMMSS(date = new Date()) {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+}
 
 /* ================= CREATE TICKET ================= */
 router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
@@ -16,7 +30,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
 
     const sheets = await getSheets();
     const ticketID = nanoid(6);
-    const createdDate = new Date().toISOString();
+    const createdDate = formatDateDDMMYYYYHHMMSS();
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";
 
@@ -85,16 +99,9 @@ router.get("/all", auth, async (req, res) => {
 
     const tickets = rows.filter(r => {
       let ok = true;
-
-      // AssignedTo filter (optional)
       if (assignedTo) ok = ok && r[2] === assignedTo;
-
-      // CreatedBy filter (optional)
       if (createdBy) ok = ok && r[1] === createdBy;
-
-      // Status filter (optional)
       if (status) ok = ok && r[4] === status;
-
       return ok;
     }).map(r => ({
       TicketID: r[0],
@@ -114,7 +121,6 @@ router.get("/all", auth, async (req, res) => {
   }
 });
 
-
 /* ================= UPDATE STATUS ================= */
 router.patch("/status/:ticketID", auth, async (req, res) => {
   try {
@@ -132,7 +138,7 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
     const ticket = rows[index];
     ticket[4] = Status;
-    ticket[6] = Status === "Done" ? new Date().toISOString() : "";
+    ticket[6] = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : "";
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,

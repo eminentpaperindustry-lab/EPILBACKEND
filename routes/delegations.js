@@ -6,12 +6,28 @@ const auth = require("../middleware/auth");
 const router = express.Router();
 const SHEET_NAME = "DelegationMaster";
 
+// ======================================================
+// DATE FORMATTER → dd/mm/yyyy hh:mm:ss
+// ======================================================
+function formatDateDDMMYYYYHHMMSS(date = new Date()) {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+}
+
 // Helper function to safely access a cell in the sheet
 const getCellValue = (row, index, defaultValue = "") => {
   return row[index] || defaultValue;
 };
 
-// Get tasks for logged-in user
+// ======================================================
+// GET TASKS FOR LOGGED-IN USER
+// ======================================================
 router.get("/", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
@@ -45,12 +61,14 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// Create new task
+// ======================================================
+// CREATE NEW TASK
+// ======================================================
 router.post("/", auth, async (req, res) => {
   try {
     const { TaskName, Deadline, Priority, Notes, Name } = req.body;
     const TaskID = nanoid(6);
-    const CreatedDate = new Date().toISOString();
+    const CreatedDate = formatDateDDMMYYYYHHMMSS();
 
     const sheets = await getSheets();
     await sheets.spreadsheets.values.append({
@@ -58,24 +76,22 @@ router.post("/", auth, async (req, res) => {
       range: `${SHEET_NAME}!A2:R`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [
-          [
-            TaskID,
-            Name ?? req.user.name,
-            TaskName,
-            CreatedDate,
-            Deadline,
-            "",
-            "",
-            "",
-            0,
-            Priority,
-            "Pending",
-            Notes,
-            "",
-            "Pending",
-          ],
-        ],
+        values: [[
+          TaskID,
+          Name ?? req.user.name,
+          TaskName,
+          CreatedDate,
+          Deadline,
+          "",
+          "",
+          "",
+          0,
+          Priority,
+          "Pending",
+          Notes,
+          "",
+          "Pending",
+        ]],
       },
     });
 
@@ -85,7 +101,9 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// Edit Task (Update task details) - Only task details update, no other logic modified
+// ======================================================
+// UPDATE TASK DETAILS
+// ======================================================
 router.put("/update/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
@@ -98,18 +116,14 @@ router.put("/update/:id", auth, async (req, res) => {
     });
 
     const rows = fetch.data.values || [];
-    // const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
-    const idx = rows.findIndex((r) => r[0] === taskId );
-
-
+    const idx = rows.findIndex((r) => r[0] === taskId);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Only update task details (TaskName, Deadline, Priority, Notes, Status)
-    rows[idx][2] = TaskName || rows[idx][2]; // TaskName
-    rows[idx][4] = Deadline || rows[idx][4]; // Deadline
-    rows[idx][9] = Priority || rows[idx][9]; // Priority
-    rows[idx][10] = Status || rows[idx][10]; // Status
-    rows[idx][11] = Notes || rows[idx][11]; // Notes
+    rows[idx][2] = TaskName || rows[idx][2];
+    rows[idx][4] = Deadline || rows[idx][4];
+    rows[idx][9] = Priority || rows[idx][9];
+    rows[idx][10] = Status || rows[idx][10];
+    rows[idx][11] = Notes || rows[idx][11];
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -124,7 +138,9 @@ router.put("/update/:id", auth, async (req, res) => {
   }
 });
 
-// Delete Task
+// ======================================================
+// DELETE TASK
+// ======================================================
 router.delete("/delete/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
@@ -136,18 +152,14 @@ router.delete("/delete/:id", auth, async (req, res) => {
     });
 
     const rows = fetch.data.values || [];
-    // const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
-    const idx = rows.findIndex((r) => r[0] === taskId );
-
-
+    const idx = rows.findIndex((r) => r[0] === taskId);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Delete the task (by removing the row from the sheet)
     rows.splice(idx, 1);
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:R`, // We'll overwrite the existing data
+      range: `${SHEET_NAME}!A2:R`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: rows },
     });
@@ -158,7 +170,9 @@ router.delete("/delete/:id", auth, async (req, res) => {
   }
 });
 
-// Mark task done
+// ======================================================
+// MARK TASK DONE
+// ======================================================
 router.patch("/done/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
@@ -172,9 +186,8 @@ router.patch("/done/:id", auth, async (req, res) => {
     const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Updating specific row columns (Completed status and FinalDate)
-    rows[idx][7] = new Date().toISOString(); // FinalDate
-    rows[idx][10] = "Completed"; // Status
+    rows[idx][7] = formatDateDDMMYYYYHHMMSS();
+    rows[idx][10] = "Completed";
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -189,7 +202,9 @@ router.patch("/done/:id", auth, async (req, res) => {
   }
 });
 
-// Shift task (Revision1 / Revision2)
+// ======================================================
+// SHIFT TASK (Revision1 / Revision2)
+// ======================================================
 router.patch("/shift/:id", auth, async (req, res) => {
   try {
     const { newDeadline, revisionField } = req.body;
@@ -205,13 +220,9 @@ router.patch("/shift/:id", auth, async (req, res) => {
     const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Shift the task date for Revision1 or Revision2
     rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
-
-    const revCount = (rows[idx][8] ? parseInt(rows[idx][8]) : 0) + 1;
-    rows[idx][8] = revCount;
-
-    rows[idx][10] = "Shifted"; // Update status
+    rows[idx][8] = (parseInt(rows[idx][8]) || 0) + 1;
+    rows[idx][10] = "Shifted";
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -226,25 +237,23 @@ router.patch("/shift/:id", auth, async (req, res) => {
   }
 });
 
-// Search by name
+// ======================================================
+// SEARCH BY NAME
+// ======================================================
 router.get("/search/by-name", auth, async (req, res) => {
   try {
     const { name } = req.query;
-
-    // If 'name' is not provided or is an empty string, return an error
     if (!name) return res.status(400).json({ error: "Name is required" });
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${SHEET_NAME}!A2:R`, // Adjust range as needed
+      range: `${SHEET_NAME}!A2:R`,
     });
 
     const rows = fetch.data.values || [];
-
-    // If 'name' is "all", return all data
     if (name.toLowerCase() === "all") {
-      const allData = rows.map((r) => ({
+      return res.json(rows.map((r) => ({
         TaskID: r[0],
         Name: r[1],
         TaskName: r[2],
@@ -258,14 +267,11 @@ router.get("/search/by-name", auth, async (req, res) => {
         Status: r[10],
         Followup: r[11],
         Taskcompletedapproval: r[13] || "Pending",
-      }));
-
-      return res.json(allData); // Return all data
+      })));
     }
 
-    // Otherwise, filter by exact name (case-insensitive)
     const tasks = rows
-      .filter((r) => r[1]?.toLowerCase() === name.toLowerCase()) // Match the name (index 1)
+      .filter((r) => r[1]?.toLowerCase() === name.toLowerCase())
       .map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -282,22 +288,20 @@ router.get("/search/by-name", auth, async (req, res) => {
         Taskcompletedapproval: r[13] || "Pending",
       }));
 
-    res.json(tasks); // Return the filtered tasks
+    res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Approve / Unapprove task
-
-
+// ======================================================
+// APPROVE / UNAPPROVE TASK
+// ======================================================
 router.patch("/approve/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
     const { approvalStatus } = req.body;
-
-    if (!approvalStatus)
-      return res.status(400).json({ error: "approvalStatus is required" });
+    if (!approvalStatus) return res.status(400).json({ error: "approvalStatus is required" });
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
@@ -307,10 +311,8 @@ router.patch("/approve/:id", auth, async (req, res) => {
 
     const rows = fetch.data.values || [];
     const idx = rows.findIndex((r) => r[0] === taskId);
-
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
-    // Ensure enough columns are in the row for updates
     while (rows[idx].length < 14) rows[idx].push("");
 
     if (approvalStatus === "Approved") {
@@ -318,7 +320,7 @@ router.patch("/approve/:id", auth, async (req, res) => {
       rows[idx][10] = "Completed";
     } else {
       rows[idx][13] = "Pending";
-      rows[idx][7] = ""; // Clear FinalDate on reversion
+      rows[idx][7] = "";
       rows[idx][10] = "Pending";
     }
 
