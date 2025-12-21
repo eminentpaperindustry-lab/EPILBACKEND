@@ -8,15 +8,20 @@ const router = express.Router();
 const SHEET_NAME = "SupportTicketsMaster";
 
 // ======================================================
-// DATE FORMATTER → dd/mm/yyyy hh:mm:ss
+// DATE FORMATTER → dd/mm/yyyy hh:mm:ss (IST)
 // ======================================================
 function formatDateDDMMYYYYHHMMSS(date = new Date()) {
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yyyy = date.getFullYear();
-  const hh = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
+  // Convert to IST (UTC + 5:30)
+  const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(utc + istOffset);
+
+  const dd = String(istDate.getDate()).padStart(2, "0");
+  const mm = String(istDate.getMonth() + 1).padStart(2, "0");
+  const yyyy = istDate.getFullYear();
+  const hh = String(istDate.getHours()).padStart(2, "0");
+  const min = String(istDate.getMinutes()).padStart(2, "0");
+  const ss = String(istDate.getSeconds()).padStart(2, "0");
 
   return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
 }
@@ -24,11 +29,7 @@ function formatDateDDMMYYYYHHMMSS(date = new Date()) {
 /* ================= CREATE TICKET ================= */
 router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
   try {
-    console.log("REQ.BODY:", req.body);
-    console.log("REQ.FILE:", req.file);
-
-    const AssignedTo = req.body.AssignedTo;
-    const Issue = req.body.Issue;
+    const { AssignedTo, Issue } = req.body;
 
     if (!AssignedTo || !Issue)
       return res.status(400).json({ error: "AssignedTo and Issue required" });
@@ -38,7 +39,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
 
     const sheets = await getSheets();
     const ticketID = nanoid(6);
-    const createdDate = formatDateDDMMYYYYHHMMSS();
+    const createdDate = formatDateDDMMYYYYHHMMSS(); // IST
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";
 
@@ -175,7 +176,7 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
     const ticket = rows[index];
     ticket[4] = Status;
-    ticket[6] = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : "";
+    ticket[6] = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // IST DoneDate
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,

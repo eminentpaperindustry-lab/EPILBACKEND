@@ -5,18 +5,23 @@ const auth = require("../middleware/auth");
 
 const router = express.Router();
 
-const MASTER_SHEET = "ChecklistMaster";
+const MASTER_SHEET = "ChecklistMaster"; // SINGLE DATA SOURCE
 
 // ======================================================
-// DATE FORMATTER → dd/mm/yyyy hh:mm:ss
+// DATE FORMATTER → dd/mm/yyyy hh:mm:ss (IST)
 // ======================================================
 function formatDateDDMMYYYYHHMMSS(date = new Date()) {
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yyyy = date.getFullYear();
-  const hh = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
+  // Convert to IST (UTC + 5:30)
+  const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(utc + istOffset);
+
+  const dd = String(istDate.getDate()).padStart(2, "0");
+  const mm = String(istDate.getMonth() + 1).padStart(2, "0");
+  const yyyy = istDate.getFullYear();
+  const hh = String(istDate.getHours()).padStart(2, "0");
+  const min = String(istDate.getMinutes()).padStart(2, "0");
+  const ss = String(istDate.getSeconds()).padStart(2, "0");
 
   return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
 }
@@ -27,31 +32,36 @@ function formatDateDDMMYYYYHHMMSS(date = new Date()) {
 function getNextDeadline(freq) {
   const date = new Date();
 
-  if (freq === "D") date.setDate(date.getDate() + 1);
-  else if (freq === "W") date.setDate(date.getDate() + 7);
-  else if (freq === "M") date.setMonth(date.getMonth() + 1);
+  if (freq === "D") {
+    date.setDate(date.getDate() + 1);
+  } else if (freq === "W") {
+    date.setDate(date.getDate() + 7);
+  } else if (freq === "M") {
+    date.setMonth(date.getMonth() + 1);
+  }
 
   return date.toISOString().split("T")[0];
 }
 
 // ======================================================
-// GET USER CHECKLIST
+// GET USER-SPECIFIC CHECKLIST ITEMS (FILTER BY NAME)
 // ======================================================
 router.get("/", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
 
+    // Fetch all master checklist data
     const fetchRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${MASTER_SHEET}!A2:K`,
+      range: `${MASTER_SHEET}!A2:K`, // A to K → 11 columns (0–10)
     });
 
     const rows = fetchRes.data.values || [];
+
     const userName = req.user.name;
 
-    const userRows = rows.filter(
-      (r) => r[0] === userName && (!r[7] || r[7].trim() === "")
-    );
+    // FILTER ROWS BY USER NAME
+    const userRows = rows.filter((r) =>  r[0] === userName && (!r[7] || r[7].trim() === ""));
 
     const data = userRows.map((r) => ({
       Name: r[0],
@@ -60,8 +70,8 @@ router.get("/", auth, async (req, res) => {
       TaskID: r[3],
       Freq: r[4],
       Task: r[5],
-      Planned: r[6],
-      Actual: r[7],
+      Planned: r[6], // deadline
+      Actual: r[7], // done date
     }));
 
     res.json(data);
@@ -72,35 +82,100 @@ router.get("/", auth, async (req, res) => {
 });
 
 // ======================================================
-// CREATE TASK
+// SEARCH CHECKLIST BY EMPLOYEE NAME (FULLY CORRECTED)
+// ======================================================
+router.get("/search/by-name", auth, async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    // Ensure 'name' query is valid
+    if (!name || name.trim() === "") {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    const sheets = await getSheets();
+
+    // Fetch data from Google Sheets
+    const fetchRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${MASTER_SHEET}!A2:K`, // A to K → 11 columns (0–10)
+    });
+
+    const rows = fetchRes.data.values || [];
+
+    // If 'name' is "all", return all data (no filtering by name)
+    if (name.toLowerCase() === "all") {
+      const allData = rows.map((r) => ({
+        Name: r[0],
+        Email: r[1],
+        Department: r[2],
+        TaskID: r[3],
+        Freq: r[4],
+        Task: r[5],
+        Planned: r[6],
+        Actual: r[7],
+        EmailForBuddy: r[8],
+        BuddyEmail: r[9],
+        Archive: r[10],
+      }));
+      return res.json(allData);
+    }
+
+    // FILTER BY EXACT NAME (Case-insensitive)
+    const filtered = rows
+      .filter((r) => r[0]?.toLowerCase() === name.toLowerCase()) // Filter by name
+      .map((r) => ({
+        Name: r[0],
+        Email: r[1],
+        Department: r[2],
+        TaskID: r[3],
+        Freq: r[4],
+        Task: r[5],
+        Planned: r[6],
+        Actual: r[7],
+        EmailForBuddy: r[8],
+        BuddyEmail: r[9],
+        Archive: r[10],
+      }));
+
+    res.json(filtered);
+  } catch (err) {
+    console.error("Checklist Search Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ======================================================
+// CREATE A NEW TASK FOR USER (INSERT INTO MASTER SHEET)
 // ======================================================
 router.post("/", auth, async (req, res) => {
   try {
     const { Task, Freq } = req.body;
+
     if (!Task || !Freq) {
-      return res.status(400).json({ error: "Task and Freq required" });
+      return res.status(400).json({ error: "Task and Freq are required" });
     }
 
     const sheets = await getSheets();
     const TaskID = nanoid(6);
     const PlannedDate = getNextDeadline(Freq);
 
-    const values = [[
-      req.user.name,
-      req.user.email || "",
-      req.user.department || "",
-      TaskID,
-      Freq,
-      Task,
-      PlannedDate,
-      "",
-      req.user.name,
-      `${new Date().toLocaleString("default", { month: "short" })}-${new Date()
-        .getFullYear()
-        .toString()
-        .slice(-2)}`,
-      ""
-    ]];
+    const values = [
+      [
+        req.user.name,        // Name
+        req.user.email || "", // Email
+        req.user.department || "", // Department
+        TaskID,
+        Freq,
+        Task,
+        PlannedDate, // Planned
+        "",          // Actual
+        req.user.name, // Email for buddy (optional)
+        `${new Date().toLocaleString("default", { month: "short" })}-${new Date().getFullYear().toString().slice(-2)}`, // Buddy Month
+        "" // ARCHIVE
+      ],
+    ];
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
@@ -117,7 +192,7 @@ router.post("/", auth, async (req, res) => {
 });
 
 // ======================================================
-// MARK TASK AS DONE (FIXED DATE FORMAT)
+// MARK TASK AS DONE (UPDATE ACTUAL DATE)
 // ======================================================
 router.patch("/done/:id", auth, async (req, res) => {
   try {
@@ -129,6 +204,8 @@ router.patch("/done/:id", auth, async (req, res) => {
     });
 
     const rows = fetchRes.data.values || [];
+
+    // Find row by Task ID
     const idx = rows.findIndex((r) => r[3] === req.params.id);
 
     if (idx === -1) {
@@ -136,9 +213,7 @@ router.patch("/done/:id", auth, async (req, res) => {
     }
 
     const row = rows[idx];
-
-    // ✅ FIXED: SAVE REQUIRED FORMAT
-    row[7] = formatDateDDMMYYYYHHMMSS(new Date());
+    row[7] = formatDateDDMMYYYYHHMMSS(new Date()); // Actual = done (formatted date)
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
