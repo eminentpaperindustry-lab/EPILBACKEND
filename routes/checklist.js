@@ -273,16 +273,16 @@ router.patch("/done/:id", auth, async (req, res) => {
     const sheets = await getSheets();
 
     // Master sheet se sirf check karna ki ID hai ya nahi
-    const masterRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-      range: `Master!D2:D`,
-    });
-    const masterIDs = masterRes.data.values || [];
+    // const masterRes = await sheets.spreadsheets.values.get({
+    //   spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+    //   range: `Master!D2:D`,
+    // });
+    // const masterIDs = masterRes.data.values || [];
 
-    const idExists = masterIDs.some(row => row[0] === req.params.id);
-    if (!idExists) {
-      return res.status(404).json({ error: "Task ID not found in master sheet" });
-    }
+    // const idExists = masterIDs.some(row => row[0] === req.params.id);
+    // if (!idExists) {
+    //   return res.status(404).json({ error: "Task ID not found in master sheet" });
+    // }
 
     // Date format function
     function formatDateDDMMYYYYHHMMSS(date) {
