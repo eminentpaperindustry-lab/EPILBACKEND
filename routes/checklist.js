@@ -5,7 +5,7 @@ const auth = require("../middleware/auth");
 
 const router = express.Router();
 
-const MASTER_SHEET = "ChecklistMaster"; // SINGLE DATA SOURCE
+const MASTER_SHEET = "Master"; // SINGLE DATA SOURCE
 
 // ======================================================
 // DATE FORMATTER → dd/mm/yyyy hh:mm:ss (IST)
@@ -43,6 +43,8 @@ function getNextDeadline(freq) {
   return date.toISOString().split("T")[0];
 }
 
+
+
 // ======================================================
 // GET USER-SPECIFIC CHECKLIST ITEMS (FILTER BY NAME)
 // ======================================================
@@ -52,7 +54,7 @@ router.get("/", auth, async (req, res) => {
 
     // Fetch all master checklist data
     const fetchRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
       range: `${MASTER_SHEET}!A2:K`, // A to K → 11 columns (0–10)
     });
 
@@ -97,7 +99,7 @@ router.get("/search/by-name", auth, async (req, res) => {
 
     // Fetch data from Google Sheets
     const fetchRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
       range: `${MASTER_SHEET}!A2:K`, // A to K → 11 columns (0–10)
     });
 
@@ -178,7 +180,7 @@ router.post("/", auth, async (req, res) => {
     ];
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
       range: `${MASTER_SHEET}!A:K`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values },
@@ -194,40 +196,180 @@ router.post("/", auth, async (req, res) => {
 // ======================================================
 // MARK TASK AS DONE (UPDATE ACTUAL DATE)
 // ======================================================
+// router.patch("/done/:id", auth, async (req, res) => {
+//   try {
+//     const sheets = await getSheets();
+
+//     const fetchRes = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `${MASTER_SHEET}!A2:K`,
+//     });
+
+//     const rows = fetchRes.data.values || [];
+
+//     // Find row by Task ID
+//     const idx = rows.findIndex((r) => r[3] === req.params.id);
+
+//     if (idx === -1) {
+//       return res.status(404).json({ error: "Task not found" });
+//     }
+
+//     const row = rows[idx];
+//     row[7] = formatDateDDMMYYYYHHMMSS(new Date()); // Actual = done (formatted date)
+
+//     await sheets.spreadsheets.values.update({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `${MASTER_SHEET}!A${idx + 2}:K${idx + 2}`,
+//       valueInputOption: "USER_ENTERED",
+//       requestBody: { values: [row] },
+//     });
+
+//     res.json({ ok: true, Actual: row[7] });
+//   } catch (err) {
+//     console.error("Checklist DONE Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// router.patch("/done/:id", auth, async (req, res) => {
+//   try {
+//     const sheets = await getSheets();
+
+//     const fetchRes = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `${MASTER_SHEET}!A2:K`,
+//     });
+
+//     const rows = fetchRes.data.values || [];
+
+//     // Find row by Task ID
+//     const idx = rows.findIndex((r) => r[3] === req.params.id);
+
+//     if (idx === -1) {
+//       return res.status(404).json({ error: "Task not found" });
+//     }
+
+//     const row = rows[idx];
+//     row[7] = formatDateDDMMYYYYHHMMSS(new Date()); // Actual = done (formatted date)
+
+//     await sheets.spreadsheets.values.update({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `${MASTER_SHEET}!A${idx + 2}:K${idx + 2}`,
+//       valueInputOption: "USER_ENTERED",
+//       requestBody: { values: [row] },
+//     });
+
+//     res.json({ ok: true, Actual: row[7] });
+//   } catch (err) {
+//     console.error("Checklist DONE Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
 router.patch("/done/:id", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
 
-    const fetchRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${MASTER_SHEET}!A2:K`,
+    // Master sheet se sirf check karna ki ID hai ya nahi
+    const masterRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+      range: `Master!D2:D`,
     });
+    const masterIDs = masterRes.data.values || [];
 
-    const rows = fetchRes.data.values || [];
-
-    // Find row by Task ID
-    const idx = rows.findIndex((r) => r[3] === req.params.id);
-
-    if (idx === -1) {
-      return res.status(404).json({ error: "Task not found" });
+    const idExists = masterIDs.some(row => row[0] === req.params.id);
+    if (!idExists) {
+      return res.status(404).json({ error: "Task ID not found in master sheet" });
     }
 
-    const row = rows[idx];
-    row[7] = formatDateDDMMYYYYHHMMSS(new Date()); // Actual = done (formatted date)
+    // Date format function
+    function formatDateDDMMYYYYHHMMSS(date) {
+      const pad = (n) => n.toString().padStart(2, "0");
+      const day = pad(date.getDate());
+      const month = pad(date.getMonth() + 1);
+      const year = date.getFullYear();
+      const hours = pad(date.getHours());
+      const minutes = pad(date.getMinutes());
+      const seconds = pad(date.getSeconds());
+      return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+    }
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: `${MASTER_SHEET}!A${idx + 2}:K${idx + 2}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [row] },
+    const currentDate = formatDateDDMMYYYYHHMMSS(new Date());
+
+    // Consolidated sheet me check karo existing rows
+    const consolidatedRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+      range: `Consolidated!A2:B`,
     });
 
-    res.json({ ok: true, Actual: row[7] });
+    const consolidatedRows = consolidatedRes.data.values || [];
+    const rowIndex = consolidatedRows.findIndex(row => row[0] === req.params.id);
+
+    if (rowIndex === -1) {
+      // Append new row
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+        range: `Consolidated!A:B`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[req.params.id, currentDate]],
+        },
+      });
+    } else {
+      // Update existing row
+      const sheetRow = rowIndex + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+        range: `Consolidated!A${sheetRow}:B${sheetRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[req.params.id, currentDate]],
+        },
+      });
+    }
+
+    res.json({ ok: true, TaskID: req.params.id, DoneAt: currentDate });
   } catch (err) {
-    console.error("Checklist DONE Error:", err);
+    console.error("Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
+// router.patch("/done/:id", auth, async (req, res) => {
+//   try {
+//     const sheets = await getSheets();
+//     const sheetName = "Consolidated";
+
+//     const doneTimestamp = formatDateDDMMYYYYHHMMSS(new Date());
+
+//     // Console me id aur date/time print karo
+//     console.log(`ID: ${req.params.id}, Done Time: ${doneTimestamp}`);
+
+//     // Ye data sheet me add karna hai — id in col A, done date in col B (example)
+//     // Agar aur columns bhi hain, to adjust karo accordingly
+
+//     const newRow = [req.params.id, doneTimestamp];
+
+//     // Append new row at the bottom of the sheet
+//     await sheets.spreadsheets.values.append({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `${sheetName}!A:B`,  // Adjust range according to columns used
+//       valueInputOption: "USER_ENTERED",
+//       insertDataOption: "INSERT_ROWS",
+//       requestBody: { values: [newRow] },
+//     });
+
+//     res.json({ ok: true, id: req.params.id, doneTime: doneTimestamp });
+//   } catch (err) {
+//     console.error("Checklist DONE Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 
 // ======================================================
 // DELETE TASK
@@ -237,7 +379,7 @@ router.delete("/:id", auth, async (req, res) => {
     const sheets = await getSheets();
 
     const fetchRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
       range: `${MASTER_SHEET}!A2:K`,
     });
 
@@ -249,7 +391,7 @@ router.delete("/:id", auth, async (req, res) => {
     }
 
     await sheets.spreadsheets.values.clear({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
       range: `${MASTER_SHEET}!A${idx + 2}:K${idx + 2}`,
     });
 
