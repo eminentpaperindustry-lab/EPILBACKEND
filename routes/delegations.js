@@ -178,20 +178,74 @@ router.delete("/delete/:id", auth, async (req, res) => {
 // ======================================================
 // MARK TASK DONE
 // ======================================================
+// router.patch("/done/:id", auth, async (req, res) => {
+//   try {
+//     const taskId = req.params.id;
+//     const sheets = await getSheets();
+//     const fetch = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//       range: `${SHEET_NAME}!A2:R`,
+//     });
+
+//     const rows = fetch.data.values || [];
+//     const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
+//     if (idx === -1) return res.status(404).json({ error: "Task not found" });
+
+//     rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // IST final date
+//     rows[idx][10] = "Completed";
+
+//     await sheets.spreadsheets.values.update({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
+//       valueInputOption: "USER_ENTERED",
+//       requestBody: { values: [rows[idx]] },
+//     });
+
+//     res.json({ ok: true });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 router.patch("/done/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
     const sheets = await getSheets();
+
     const fetch = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
       range: `${SHEET_NAME}!A2:R`,
     });
 
     const rows = fetch.data.values || [];
-    const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
-    if (idx === -1) return res.status(404).json({ error: "Task not found" });
+    const idx = rows.findIndex(
+      (r) => r[0] === taskId && r[1] === req.user.name
+    );
 
-    rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // IST final date
+    if (idx === -1)
+      return res.status(404).json({ error: "Task not found" });
+
+    // 🔹 Completion date (NOW)
+    const completedDate = new Date();
+
+    // 🔹 Week ka Monday nikalna
+    const day = completedDate.getDay(); // 0=Sunday
+    const diff = completedDate.getDate() - day + (day === 0 ? -6 : 1);
+    const mondayDate = new Date(completedDate);
+    mondayDate.setDate(diff);
+
+    const pad = (n) => String(n).padStart(2, "0");
+
+    const format = (d) =>
+      `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ` +
+      `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+    // ✅ index 7 → completed date
+    rows[idx][7] = format(completedDate);
+
+    // ✅ index 12 → us week ka Monday
+    rows[idx][12] = format(mondayDate);
+
     rows[idx][10] = "Completed";
 
     await sheets.spreadsheets.values.update({
@@ -206,6 +260,7 @@ router.patch("/done/:id", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // ======================================================
 // SHIFT TASK (Revision1 / Revision2)
