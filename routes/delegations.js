@@ -37,7 +37,7 @@ router.get("/", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -77,7 +77,7 @@ router.post("/", auth, async (req, res) => {
 
     const sheets = await getSheets();
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
@@ -116,7 +116,7 @@ router.put("/update/:id", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -131,7 +131,7 @@ router.put("/update/:id", auth, async (req, res) => {
     rows[idx][11] = Notes || rows[idx][11];
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
@@ -152,7 +152,7 @@ router.delete("/delete/:id", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -161,9 +161,8 @@ router.delete("/delete/:id", auth, async (req, res) => {
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
     rows.splice(idx, 1);
-
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: rows },
@@ -183,7 +182,7 @@ router.delete("/delete/:id", auth, async (req, res) => {
 //     const taskId = req.params.id;
 //     const sheets = await getSheets();
 //     const fetch = await sheets.spreadsheets.values.get({
-//       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
 //       range: `${SHEET_NAME}!A2:R`,
 //     });
 
@@ -195,7 +194,7 @@ router.delete("/delete/:id", auth, async (req, res) => {
 //     rows[idx][10] = "Completed";
 
 //     await sheets.spreadsheets.values.update({
-//       spreadsheetId: process.env.GOOGLE_SHEET_ID,
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
 //       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
 //       valueInputOption: "USER_ENTERED",
 //       requestBody: { values: [rows[idx]] },
@@ -213,7 +212,7 @@ router.patch("/done/:id", auth, async (req, res) => {
     const sheets = await getSheets();
 
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -249,7 +248,7 @@ router.patch("/done/:id", auth, async (req, res) => {
     rows[idx][10] = "Completed";
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
@@ -272,7 +271,7 @@ router.patch("/shift/:id", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -285,7 +284,7 @@ router.patch("/shift/:id", auth, async (req, res) => {
     rows[idx][10] = "Shifted";
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
@@ -307,7 +306,7 @@ router.get("/search/by-name", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -365,7 +364,7 @@ router.patch("/approve/:id", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -382,11 +381,12 @@ router.patch("/approve/:id", auth, async (req, res) => {
     } else {
       rows[idx][13] = "Pending";
       rows[idx][7] = "";
+      rows[idx][12] = "";
       rows[idx][10] = "Pending";
     }
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
