@@ -278,8 +278,9 @@ router.patch("/shift/:id", auth, async (req, res) => {
     const rows = fetch.data.values || [];
     const idx = rows.findIndex((r) => r[0] === taskId && r[1] === req.user.name);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
+console.log("newDeadline: ", newDeadline);
 
-    rows[idx][revisionField === "Revision1" ? 5 : 6] = newDeadline;
+    rows[idx][4] = newDeadline;
     rows[idx][8] = (parseInt(rows[idx][8]) || 0) + 1;
     rows[idx][10] = "Shifted";
 
