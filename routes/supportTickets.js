@@ -44,7 +44,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
     const photoUrl = req.file ? req.file.path : "";
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A:H`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
@@ -66,7 +66,7 @@ router.get("/created", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
     const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A2:H`,
     });
 
@@ -95,7 +95,7 @@ router.get("/assigned", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
     const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A2:H`,
     });
 
@@ -126,7 +126,7 @@ router.get("/all", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A2:H`,
     });
 
@@ -166,7 +166,7 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
     const sheets = await getSheets();
     const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A2:H`,
     });
 
@@ -179,7 +179,7 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
     ticket[6] = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // IST DoneDate
 
     await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A${index + 2}:H${index + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [ticket] },
