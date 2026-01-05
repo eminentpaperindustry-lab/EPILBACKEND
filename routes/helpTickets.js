@@ -63,11 +63,17 @@ router.get("/created", auth, async (req, res) => {
       spreadsheetId: process.env.GOOGLE_SHEET_ID_HELPTICKET,
       range: `${SHEET_NAME}!A2:H`
     });
+
+    console.log("req.user.name:",req.user.name);
+    
     const rows = data.data.values || [];
     const tickets = rows.filter(r => r[1] === req.user.name).map(r => ({
       TicketID: r[0], CreatedBy: r[1], AssignedTo: r[2], Issue: r[3],
       Status: r[4], CreatedDate: r[5], DoneDate: r[6] || "", IssuePhoto: r[7] || ""
     }));
+
+    console.log("tickets:", tickets ,rows );
+    
     res.json(tickets);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
