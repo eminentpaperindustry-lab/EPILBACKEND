@@ -711,7 +711,7 @@ router.patch("/approve/:id", auth, async (req, res) => {
     if (approvalStatus === "Approved") {
       rows[idx][13] = "Approved";
       rows[idx][10] = "Completed";
-      rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // IST final date
+      // rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // IST final date
     } else {
       rows[idx][13] = "Pending";
       rows[idx][7] = "";
