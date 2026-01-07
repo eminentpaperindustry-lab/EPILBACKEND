@@ -76,33 +76,58 @@ router.post("/", auth, async (req, res) => {
     const CreatedDate = formatDateDDMMYYYYHHMMSS();
 
     const sheets = await getSheets();
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
-      range: `${SHEET_NAME}!A2:R`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[
-          TaskID,
-          Name ?? req.user.name,
-          TaskName,
-          CreatedDate,
-          Deadline,
-          "",
-          "",
-          "",
-          0,
-          Priority,
-          "Pending",
-          Notes,
-          "",
-          "Pending",
-        ]],
-      },
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_DELEGATION;
+
+    // 1️⃣ Get next empty row (A column ke basis pe)
+    const readRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${SHEET_NAME}!A:A`,
     });
 
+    const nextRow = (readRes.data.values?.length || 1) + 1;
+
+    // 2️⃣ Retry function
+    const writeWithRetry = async (retry = 3) => {
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${SHEET_NAME}!A${nextRow}:R${nextRow}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: [[
+              TaskID,
+              Name ?? req.user.name,
+              TaskName,
+              CreatedDate,
+              Deadline,
+              "",
+              "",
+              "",
+              0,
+              Priority,
+              "Pending",
+              Notes,
+              "",
+              "Pending",
+            ]],
+          },
+        });
+      } catch (err) {
+        if (retry === 0) throw err;
+        await new Promise(r => setTimeout(r, 1000));
+        return writeWithRetry(retry - 1);
+      }
+    };
+
+    // 3️⃣ Write to sheet (confirmed)
+    await writeWithRetry();
+
+    // 4️⃣ Success ONLY after sheet write
     res.json({ ok: true, TaskID });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("GOOGLE SHEET ERROR:", err);
+    res.status(500).json({ ok: false, error: "Task not saved in sheet" });
   }
 });
 
@@ -319,7 +344,6 @@ function getWeekEndDate(weekStartDate) {
 router.get("/filter", auth, async (req, res) => {
   try {
     const { month, week } = req.query;
-
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
     }
