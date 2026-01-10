@@ -71,7 +71,7 @@ router.get("/", auth, async (req, res) => {
 // ======================================================
 router.post("/", auth, async (req, res) => {
   try {
-    const { TaskName, Deadline, Priority, Notes, Name } = req.body;
+    const { TaskName, Deadline, Priority, Notes, Name,AssignBy } = req.body;
     const TaskID = nanoid(6);
     const CreatedDate = formatDateDDMMYYYYHHMMSS();
 
@@ -85,6 +85,7 @@ router.post("/", auth, async (req, res) => {
     });
 
     const nextRow = (readRes.data.values?.length || 1) + 1;
+console.log("AssignBy:",AssignBy);
 
     // 2️⃣ Retry function
     const writeWithRetry = async (retry = 3) => {
@@ -106,7 +107,7 @@ router.post("/", auth, async (req, res) => {
               0,
               Priority,
               "Pending",
-              Notes,
+              AssignBy||"",
               "",
               "Pending",
             ]],
@@ -567,9 +568,11 @@ router.patch("/done/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
     const sheets = await getSheets();
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_DELEGATION;
 
+    // 1️⃣ Fetch all rows
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
+      spreadsheetId,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -581,39 +584,48 @@ router.patch("/done/:id", auth, async (req, res) => {
     if (idx === -1)
       return res.status(404).json({ error: "Task not found" });
 
-    // 🔹 Completion date (NOW)
+    // 2️⃣ Prepare dates
     const completedDate = new Date();
-
-    // 🔹 Week ka Monday nikalna
     const day = completedDate.getDay(); // 0=Sunday
     const diff = completedDate.getDate() - day + (day === 0 ? -6 : 1);
     const mondayDate = new Date(completedDate);
     mondayDate.setDate(diff);
 
     const pad = (n) => String(n).padStart(2, "0");
-
     const format = (d) =>
       `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ` +
       `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 
-    // ✅ index 7 → completed date
-    rows[idx][7] = format(completedDate);
+    // 3️⃣ Update row values
+    rows[idx][7] = format(completedDate); // Completed date
+    rows[idx][12] = format(mondayDate);   // Week Monday
+    rows[idx][10] = "Completed";          // Status
 
-    // ✅ index 12 → us week ka Monday
-    rows[idx][12] = format(mondayDate);
+    // 4️⃣ Retry function for writing
+    const writeWithRetry = async (retry = 3) => {
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [rows[idx]] },
+        });
+      } catch (err) {
+        if (retry === 0) throw err;
+        await new Promise((r) => setTimeout(r, 1000));
+        return writeWithRetry(retry - 1);
+      }
+    };
 
-    rows[idx][10] = "Completed";
+    // 5️⃣ Write to sheet
+    await writeWithRetry();
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
-      range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [rows[idx]] },
-    });
-
+    // ✅ Success only after sheet update
     res.json({ ok: true });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("GOOGLE SHEET ERROR:", err);
+    res.status(500).json({ error: "Task not updated in sheet" });
   }
 });
 
@@ -659,7 +671,7 @@ console.log("newDeadline: ", newDeadline);
 // ======================================================
 router.get("/search/by-name", auth, async (req, res) => {
   try {
-    const { name } = req.query;
+    const { name, assignBy } = req.query;
     if (!name) return res.status(400).json({ error: "Name is required" });
 
     const sheets = await getSheets();
@@ -668,23 +680,34 @@ router.get("/search/by-name", auth, async (req, res) => {
       range: `${SHEET_NAME}!A2:R`,
     });
 
-    const rows = fetch.data.values || [];
+    let rows = fetch.data.values || [];
+
+    // ✅ NEW: AssignBy filter (optional)
+    if (assignBy && assignBy.toLowerCase() !== "all") {
+      rows = rows.filter(
+        (r) => r[11]?.toLowerCase() === assignBy.toLowerCase()
+      );
+    }
+
+    // ✅ EXISTING BEHAVIOUR — untouched
     if (name.toLowerCase() === "all") {
-      return res.json(rows.map((r) => ({
-        TaskID: r[0],
-        Name: r[1],
-        TaskName: r[2],
-        CreatedDate: r[3],
-        Deadline: r[4],
-        Revision1: r[5],
-        Revision2: r[6],
-        FinalDate: r[7],
-        Revisions: r[8],
-        Priority: r[9],
-        Status: r[10],
-        Followup: r[11],
-        Taskcompletedapproval: r[13] || "Pending",
-      })));
+      return res.json(
+        rows.map((r) => ({
+          TaskID: r[0],
+          Name: r[1],
+          TaskName: r[2],
+          CreatedDate: r[3],
+          Deadline: r[4],
+          Revision1: r[5],
+          Revision2: r[6],
+          FinalDate: r[7],
+          Revisions: r[8],
+          Priority: r[9],
+          Status: r[10],
+          Followup: r[11],
+          Taskcompletedapproval: r[13] || "Pending",
+        }))
+      );
     }
 
     const tasks = rows
@@ -711,6 +734,7 @@ router.get("/search/by-name", auth, async (req, res) => {
   }
 });
 
+
 // ======================================================
 // APPROVE / UNAPPROVE TASK
 // ======================================================
@@ -718,11 +742,15 @@ router.patch("/approve/:id", auth, async (req, res) => {
   try {
     const taskId = req.params.id;
     const { approvalStatus } = req.body;
-    if (!approvalStatus) return res.status(400).json({ error: "approvalStatus is required" });
+    if (!approvalStatus) 
+      return res.status(400).json({ error: "approvalStatus is required" });
 
     const sheets = await getSheets();
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_DELEGATION;
+
+    // 1️⃣ Fetch all rows
     const fetch = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
+      spreadsheetId,
       range: `${SHEET_NAME}!A2:R`,
     });
 
@@ -730,30 +758,48 @@ router.patch("/approve/:id", auth, async (req, res) => {
     const idx = rows.findIndex((r) => r[0] === taskId);
     if (idx === -1) return res.status(404).json({ error: "Task not found" });
 
+    // Ensure row has at least 14 columns
     while (rows[idx].length < 14) rows[idx].push("");
 
+    // 2️⃣ Update row based on approvalStatus
     if (approvalStatus === "Approved") {
-      rows[idx][13] = "Approved";
-      rows[idx][10] = "Completed";
-      // rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // IST final date
+      rows[idx][13] = "Approved";   // Approval status
+      rows[idx][10] = "Completed";  // Task status
+      // rows[idx][7] = formatDateDDMMYYYYHHMMSS(); // Optional: completion date
     } else {
       rows[idx][13] = "Pending";
-      rows[idx][7] = "";
-      rows[idx][12] = "";
-      rows[idx][10] = "Pending";
+      rows[idx][7] = "";            // Clear completion date
+      rows[idx][12] = "";           // Clear week Monday
+      rows[idx][10] = "Pending";    // Reset task status
     }
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
-      range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [rows[idx]] },
-    });
+    // 3️⃣ Retry function for writing
+    const writeWithRetry = async (retry = 3) => {
+      try {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${SHEET_NAME}!A${idx + 2}:R${idx + 2}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [rows[idx]] },
+        });
+      } catch (err) {
+        if (retry === 0) throw err;
+        await new Promise((r) => setTimeout(r, 1000));
+        return writeWithRetry(retry - 1);
+      }
+    };
 
+    // 4️⃣ Write to sheet
+    await writeWithRetry();
+
+    // ✅ Success only after sheet update
     res.json({ ok: true, updated: rows[idx] });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("GOOGLE SHEET ERROR:", err);
+    res.status(500).json({ error: "Task approval not updated in sheet" });
   }
 });
+
 
 module.exports = router;

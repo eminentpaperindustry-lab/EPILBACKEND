@@ -268,21 +268,79 @@ router.post("/", auth, async (req, res) => {
 // });
 
 
+// router.patch("/done/:id", auth, async (req, res) => {
+//   try {
+//     const sheets = await getSheets();
+
+//     // Master sheet se sirf check karna ki ID hai ya nahi
+//     // const masterRes = await sheets.spreadsheets.values.get({
+//     //   spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//     //   range: `Master!D2:D`,
+//     // });
+//     // const masterIDs = masterRes.data.values || [];
+
+//     // const idExists = masterIDs.some(row => row[0] === req.params.id);
+//     // if (!idExists) {
+//     //   return res.status(404).json({ error: "Task ID not found in master sheet" });
+//     // }
+
+//     // Date format function
+//     function formatDateDDMMYYYYHHMMSS(date) {
+//       const pad = (n) => n.toString().padStart(2, "0");
+//       const day = pad(date.getDate());
+//       const month = pad(date.getMonth() + 1);
+//       const year = date.getFullYear();
+//       const hours = pad(date.getHours());
+//       const minutes = pad(date.getMinutes());
+//       const seconds = pad(date.getSeconds());
+//       return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+//     }
+
+//     const currentDate = formatDateDDMMYYYYHHMMSS(new Date());
+
+//     // Consolidated sheet me check karo existing rows
+//     const consolidatedRes = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//       range: `Consolidated!A2:B`,
+//     });
+
+//     const consolidatedRows = consolidatedRes.data.values || [];
+//     const rowIndex = consolidatedRows.findIndex(row => row[0] === req.params.id);
+
+//     if (rowIndex === -1) {
+//       // Append new row
+//       await sheets.spreadsheets.values.append({
+//         spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//         range: `Consolidated!A:B`,
+//         valueInputOption: "USER_ENTERED",
+//         requestBody: {
+//           values: [[req.params.id, currentDate]],
+//         },
+//       });
+//     } else {
+//       // Update existing row
+//       const sheetRow = rowIndex + 2;
+//       await sheets.spreadsheets.values.update({
+//         spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+//         range: `Consolidated!A${sheetRow}:B${sheetRow}`,
+//         valueInputOption: "USER_ENTERED",
+//         requestBody: {
+//           values: [[req.params.id, currentDate]],
+//         },
+//       });
+//     }
+
+//     res.json({ ok: true, TaskID: req.params.id, DoneAt: currentDate });
+//   } catch (err) {
+//     console.error("Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 router.patch("/done/:id", auth, async (req, res) => {
   try {
     const sheets = await getSheets();
-
-    // Master sheet se sirf check karna ki ID hai ya nahi
-    // const masterRes = await sheets.spreadsheets.values.get({
-    //   spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-    //   range: `Master!D2:D`,
-    // });
-    // const masterIDs = masterRes.data.values || [];
-
-    // const idExists = masterIDs.some(row => row[0] === req.params.id);
-    // if (!idExists) {
-    //   return res.status(404).json({ error: "Task ID not found in master sheet" });
-    // }
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_CHECKLIST;
 
     // Date format function
     function formatDateDDMMYYYYHHMMSS(date) {
@@ -298,44 +356,57 @@ router.patch("/done/:id", auth, async (req, res) => {
 
     const currentDate = formatDateDDMMYYYYHHMMSS(new Date());
 
-    // Consolidated sheet me check karo existing rows
+    // 1️⃣ Fetch existing rows in Consolidated sheet
     const consolidatedRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+      spreadsheetId,
       range: `Consolidated!A2:B`,
     });
 
     const consolidatedRows = consolidatedRes.data.values || [];
     const rowIndex = consolidatedRows.findIndex(row => row[0] === req.params.id);
 
-    if (rowIndex === -1) {
-      // Append new row
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-        range: `Consolidated!A:B`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [[req.params.id, currentDate]],
-        },
-      });
-    } else {
-      // Update existing row
-      const sheetRow = rowIndex + 2;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-        range: `Consolidated!A${sheetRow}:B${sheetRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [[req.params.id, currentDate]],
-        },
-      });
-    }
+    // 2️⃣ Retry function for writing (append or update)
+    const writeWithRetry = async (values, range, retry = 3) => {
+      try {
+        if (rowIndex === -1) {
+          // Append new row
+          await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [values] },
+          });
+        } else {
+          // Update existing row
+          await sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [values] },
+          });
+        }
+      } catch (err) {
+        if (retry === 0) throw err;
+        await new Promise(r => setTimeout(r, 1000));
+        return writeWithRetry(values, range, retry - 1);
+      }
+    };
 
+    // 3️⃣ Determine range
+    const range = rowIndex === -1 ? `Consolidated!A:B` : `Consolidated!A${rowIndex + 2}:B${rowIndex + 2}`;
+
+    // 4️⃣ Write to sheet
+    await writeWithRetry([req.params.id, currentDate], range);
+
+    // ✅ Success response only after sheet update
     res.json({ ok: true, TaskID: req.params.id, DoneAt: currentDate });
+
   } catch (err) {
-    console.error("Error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("GOOGLE SHEET ERROR:", err);
+    res.status(500).json({ error: "Task not updated in Consolidated sheet" });
   }
 });
+
 
 
 
