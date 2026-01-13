@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const { nanoid } = require("nanoid");
 const jwt = require("jsonwebtoken");
 const { getSheets } = require("../googleSheetsClient");
+const auth = require("../middleware/auth");
 
 
 // ---------------- ADD ADDITIONAL FEATURE ----------------
@@ -21,16 +22,17 @@ router.post("/add", auth, async (req, res) => {
     }
 
     // Append row to Google Sheet
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "AdditionalFeature!A:D",
-      valueInputOption: "USER_ENTERED",
-      resource: {
-        values: [
-          [addedBy, featureName, featureURL, new Date().toISOString()]
-        ]
-      }
-    });
+  await sheets.spreadsheets.values.append({
+  spreadsheetId: process.env.GOOGLE_SHEET_ID,
+  range: "AdditionalFeature!A:D", // Corrected to match tab name
+  valueInputOption: "USER_ENTERED",
+  resource: {
+    values: [
+      [addedBy, featureName, featureURL, new Date().toISOString()]
+    ]
+  }
+});
+
 
     res.json({ message: "Feature added successfully" });
 
@@ -44,34 +46,45 @@ router.post("/add", auth, async (req, res) => {
 // ---------------- GET ADDITIONAL FEATURES FOR LOGGED-IN USER ----------------
 router.get("/all", auth, async (req, res) => {
   try {
+    const userName = req.user.name; // logged-in user ka name
+    if (!userName) return res.status(400).json({ error: "User name not found" });
+
     const sheets = await getSheets();
 
-    const result = await sheets.spreadsheets.values.get({
+    // 🔹 Correct sheet range (start from row 2, no need to slice)
+    // const sheetRes = await sheets.spreadsheets.values.get({
+    //   spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    //   range: "AdditionalFeatures!A2:D", // row 2 se start, skip header
+    // });
+
+console.log("sami testing");
+
+
+     const sheetRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "AdditionalFeatures!A:D",
+      range: "AdditionalFeature!A2:D",
     });
 
-    const rows = result.data.values || [];
+    const rows = sheetRes.data.values || [];
 
-    // 🔹 Filter rows by logged-in user's name
-    const userName = req.user.name;
-
-    const features = rows
-      .filter(r => r[0] === userName)  // A column = AddedBy
+    // 🔹 Map rows to objects
+    const userFeatures = rows
+      .filter(r => r[0] === userName) // filter by AddedBy
       .map(r => ({
-        addedBy: r[0],
-        featureName: r[1],
-        featureURL: r[2],
-        timestamp: r[3],
+        AddedBy: r[0] || "",
+        FeatureName: r[1] || "",
+        FeatureURL: r[2] || "",
+        CreatedAt: r[3] || "",
       }));
 
-    res.json(features);
+    res.json(userFeatures);
 
   } catch (err) {
-    console.error("GET FEATURES ERROR:", err);
+    console.error("GET ADDITIONAL FEATURES ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 module.exports = router;
