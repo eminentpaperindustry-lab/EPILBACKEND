@@ -20,10 +20,12 @@ const supportTicketsRoutes = require("./routes/supportTickets");
 const checklistRoutes = require("./routes/checklist");
 const employeeRouter = require("./routes/employee");
 const helpTicketsRouter = require("./routes/helpTickets");
+const additionalFeature=require("./routes/additionalFeature")
 
 // API prefix
 app.use("/api/auth", authRoutes);
 app.use("/api/adminauth", adminAuth);
+app.use("/api/additionalfeature",additionalFeature);
 
 app.use("/api/delegations", delegationsRoutes);
 app.use("/api/support-tickets", supportTicketsRoutes);
