@@ -10,7 +10,7 @@ router.get("/all", auth, async (req, res) => {
     const sheets = await getSheets();
     const empRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Employee!A1:B",
+      range: "Employee!A1:H",
     });
 
     console.log("empRes.data.values: ", empRes.data.values);
@@ -18,11 +18,38 @@ router.get("/all", auth, async (req, res) => {
     const employees = (empRes.data.values || []).map(e => ({
       employeeID: e[0],
       name: e[1],
+      department:e[4],
+      number:e[2]
+
     }));
 
     res.json(employees);
   } catch (err) {
     console.error("EMPLOYEE ALL ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/allAdmin", auth, async (req, res) => {
+  try {
+    const sheets = await getSheets();
+    const empRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Admin!A1:H",
+    });
+
+    console.log("empRes.data.values: ", empRes.data.values);
+    
+    const employees = (empRes.data.values || []).map(e => ({
+      employeeID: e[0],
+      name: e[1],
+       department:e[4],
+      number:e[2]
+    }));
+
+    res.json(employees);
+  } catch (err) {
+    console.error("EMPLOYEE Admin ALL ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
