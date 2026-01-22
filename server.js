@@ -34,5 +34,7 @@ app.use("/api/employee", employeeRouter);
 app.use("/api/helpTickets", helpTicketsRouter);
 app.use("/api/delegations", require("./routes/delegations"));
 
+const whatsappRoutes =require("./routes/whatsapp.js");
+app.use("/api/whatsapp", whatsappRoutes);
 
 app.listen(process.env.PORT, () => console.log(`Server running on port ${process.env.PORT}`));

@@ -6,6 +6,10 @@ const { parser } = require("../cloudinary"); // multer + cloudinary
 
 const router = express.Router();
 const SHEET_NAME = "SupportTicketsMaster";
+const generateTicketID = () => {
+  const random4Digit = Math.floor(1000 + Math.random() * 9000);
+  return `ST${random4Digit}`;
+};
 
 // ======================================================
 // DATE FORMATTER → dd/mm/yyyy hh:mm:ss (IST)
@@ -38,7 +42,8 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       return res.status(400).json({ error: "Cannot assign ticket to yourself" });
 
     const sheets = await getSheets();
-    const ticketID = nanoid(6);
+    // const ticketID = nanoid(6);
+      const ticketID = generateTicketID();
     const createdDate = formatDateDDMMYYYYHHMMSS(); // IST
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";

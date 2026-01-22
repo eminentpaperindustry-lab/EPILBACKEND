@@ -10,7 +10,7 @@ router.get("/all", auth, async (req, res) => {
     const sheets = await getSheets();
     const empRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Employee!A1:H",
+      range: "Employee!A2:H",
     });
 
     console.log("empRes.data.values: ", empRes.data.values);
@@ -35,7 +35,7 @@ router.get("/allAdmin", auth, async (req, res) => {
     const sheets = await getSheets();
     const empRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Admin!A1:H",
+      range: "Admin!A2:H",
     });
 
     console.log("empRes.data.values: ", empRes.data.values);

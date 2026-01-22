@@ -43,7 +43,7 @@ router.post("/register", async (req, res) => {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Employee!A:F",
+      range: "Employee!A2:L",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
@@ -197,7 +197,7 @@ router.post("/register", async (req, res) => {
 // LOGIN
 // =====================================================
 router.post("/login", async (req, res) => {
-  console.log("process.env: ",process.env);
+  // console.log("process.env: ",process.env);
   
   try {
     const { employeeID, password } = req.body;
@@ -205,7 +205,7 @@ router.post("/login", async (req, res) => {
     const sheets = await getSheets();
     const empRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Employee!A:F",
+      range: "Employee!A2:L",
     });
 
     const employees = empRes.data.values || [];
@@ -234,6 +234,9 @@ router.post("/login", async (req, res) => {
       user: {
         employeeID: user[0],
         name: user[1],
+        department:user[4],
+        mobile:user[2],
+        company:user[7],
         sheet: `${user[1]}_Delegations`,
       },
     });
