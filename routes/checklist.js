@@ -94,9 +94,7 @@ router.get("/search/by-name", auth, async (req, res) => {
     if (!name || name.trim() === "") {
       return res.status(400).json({ error: "Name is required" });
     }
-
     const sheets = await getSheets();
-
     // Fetch data from Google Sheets
     const fetchRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,

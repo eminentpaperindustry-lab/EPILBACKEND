@@ -73,6 +73,11 @@ router.post("/", auth, async (req, res) => {
   try {
     const { TaskName, Deadline, Priority, Notes, Name,AssignBy } = req.body;
     const TaskID = nanoid(6);
+    
+   if (!Name || Name === "all" || !AssignBy) {
+  return res.status(400).json({ error: "Please select Doer Name and Assign By before creating the task." });
+}
+
     const CreatedDate = formatDateDDMMYYYYHHMMSS();
 
     const sheets = await getSheets();
@@ -85,8 +90,6 @@ router.post("/", auth, async (req, res) => {
     });
 
     const nextRow = (readRes.data.values?.length || 1) + 1;
-console.log("AssignBy:",AssignBy);
-
     // 2️⃣ Retry function
     const writeWithRetry = async (retry = 3) => {
       try {
