@@ -146,6 +146,9 @@ router.get("/search/by-name", auth, async (req, res) => {
 });
 
 
+
+
+
 // ======================================================
 // CREATE A NEW TASK FOR USER (INSERT INTO MASTER SHEET)
 // ======================================================
@@ -406,6 +409,119 @@ router.patch("/done/:id", auth, async (req, res) => {
 });
 
 
+router.get("/filter", auth, async (req, res) => {
+  try {
+    const sheets = await getSheets();
+    const fetchRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
+      range: `${MASTER_SHEET}!A2:K`,
+    });
+
+    const rows = fetchRes.data.values || [];
+    const { month, week, startDate, endDate } = req.query;
+    const userName = req.user.name.trim().toLowerCase();
+
+    // Parse dd/mm/yyyy (ignore time)
+    function parseDDMMYYYY(str) {
+      if (!str) return null;
+      const parts = str.split(" ")[0].split("/");
+      if (parts.length !== 3) return null;
+      const [d, m, y] = parts;
+      const year = y.length === 2 ? 2000 + +y : +y;
+      return new Date(year, +m - 1, +d);
+    }
+
+    // Days in month helper
+    function daysInMonth(year, month) {
+      return new Date(year, month, 0).getDate();
+    }
+
+    // Check if date is in month/week
+    function isInMonthWeek(date, monthNum, weekNum) {
+      if (!date) return false;
+      if (date.getMonth() + 1 !== +monthNum) return false;
+      const day = date.getDate();
+      const lastDay = daysInMonth(date.getFullYear(), monthNum);
+      const startDay = (weekNum - 1) * 7 + 1;
+      let endDay = weekNum * 7;
+      if (endDay > lastDay) endDay = lastDay;
+      return day >= startDay && day <= endDay;
+    }
+
+    const filteredRows = rows.filter((r) => {
+      const rowName = (r[0] || "").trim().toLowerCase();
+      const planned = parseDDMMYYYY(r[6]);
+      const actual = parseDDMMYYYY(r[7]);
+
+      // 1️⃣ User filter
+      if (rowName !== userName) return false;
+
+      // 2️⃣ Month/week filter
+      if (month && week) {
+        const m = parseInt(month);
+        const w = parseInt(week);
+        const inWeek = (planned && isInMonthWeek(planned, m, w)) || (actual && isInMonthWeek(actual, m, w));
+        if (!inWeek) return false;
+      }
+
+      // 3️⃣ Date range filter
+      if (startDate || endDate) {
+        const start = startDate ? new Date(startDate) : null;
+        const end = endDate ? new Date(endDate) : null;
+        const datesToCheck = [planned, actual].filter(Boolean);
+        if (datesToCheck.length === 0) return false;
+        const inRange = datesToCheck.some(d => {
+          if (start && d < start) return false;
+          if (end && d > end) return false;
+          return true;
+        });
+        if (!inRange) return false;
+      }
+
+      return true;
+    });
+
+    const totalTasks = filteredRows.length;
+    const completedTasks = filteredRows.filter(r => r[7] && r[7].trim() !== "").length;
+    const pendingTasks = totalTasks - completedTasks;
+    const delayedTasks = filteredRows.filter(r => {
+      const planned = parseDDMMYYYY(r[6]);
+      const actual = parseDDMMYYYY(r[7]);
+      return actual && planned && actual > planned;
+    }).length;
+
+    const pendingPercentage = totalTasks ? ((pendingTasks / totalTasks) * 100).toFixed(2) : "0.00";
+    const delayedPercentage = totalTasks ? ((delayedTasks / totalTasks) * 100).toFixed(2) : "0.00";
+
+    res.json({
+      tasks: filteredRows.map(r => ({
+        Name: r[0],
+        Email: r[1],
+        Department: r[2],
+        TaskID: r[3],
+        Freq: r[4],
+        Task: r[5],
+        Planned: r[6],
+        Actual: r[7],
+      })),
+      totalTasks,
+      completedTasks,
+      pendingTasks,
+      delayedTasks,
+      pendingPercentage,
+      delayedPercentage,
+    });
+
+  } catch (err) {
+    console.error("Checklist Filter Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+router.get("/test", (req, res) => {
+  res.json({ ok: true, msg: "Route works!" });
+});
 
 
 // router.patch("/done/:id", auth, async (req, res) => {

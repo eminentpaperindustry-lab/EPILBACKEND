@@ -74,9 +74,9 @@ router.post("/", auth, async (req, res) => {
     const { TaskName, Deadline, Priority, Notes, Name,AssignBy } = req.body;
     const TaskID = nanoid(6);
     
-   if (!Name || Name === "all" || !AssignBy) {
-  return res.status(400).json({ error: "Please select Doer Name and Assign By before creating the task." });
-}
+//    if (!Name || Name === "all" || !AssignBy) {
+//   return res.status(400).json({ error: "Please select Doer Name and Assign By before creating the task." });
+// }
 
     const CreatedDate = formatDateDDMMYYYYHHMMSS();
 
@@ -345,99 +345,348 @@ function getWeekEndDate(weekStartDate) {
 }
 
 // API Endpoint to get filtered tasks based on the month and week
+// router.get("/filter", auth, async (req, res) => {
+//   try {
+//     const { month, week } = req.query;
+//     if (!month || !week) {
+//       return res.status(400).json({ error: "Month and Week are required" });
+//     }
+
+//     // Fetch task data from Google Sheets
+//     const sheets = await getSheets();
+//     const fetch = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
+//       range: `${SHEET_NAME}!A2:R`,
+//     });
+
+//     const rows = fetch.data.values || [];
+//     let filteredTasks = rows.filter((r) => r[1] === req.user.name); // Filter tasks by user
+
+//     // Parse the month to match the expected format (e.g., '12' for December)
+//     const monthRegex = new RegExp(`^${month}-`, "i");
+
+//     // Filter tasks by month (created date or deadline date)
+//     filteredTasks = filteredTasks.filter((task) => {
+//       const createdDate = parseDate(task[3]); // Parse the created date
+//       const deadlineDate = parseDate(task[4]); // Parse the deadline date
+
+//       // If dates are invalid, skip the task
+//       if (!createdDate || !deadlineDate) return false;
+
+//       // Filter by month (created date and deadline date)
+//       const matchesMonth = monthRegex.test(createdDate.toISOString().slice(0, 7)) || monthRegex.test(deadlineDate.toISOString().slice(0, 7));
+//       return matchesMonth;
+//     });
+
+//     // Get the start and end dates of the selected week (in the selected month)
+//     const weekStart = getWeekStartDate(week, 2025, month - 1); // Get the start of the selected week (month is zero-indexed)
+//     const weekEnd = getWeekEndDate(weekStart); // Get the end of the selected week
+
+//     console.log(`Selected Month: ${month}, Week: ${week}`);
+//     console.log(`Week Start: ${weekStart.toISOString()}`);
+//     console.log(`Week End: ${weekEnd.toISOString()}`);
+
+//     console.log("filteredTasks: ", filteredTasks);
+    
+
+//     // Filter tasks by week (tasks created within the selected week)
+//     filteredTasks = filteredTasks.filter((task) => {
+//       const createdDate = parseDate(task[3]);
+      
+//       console.log("parseDate(task[3]): ", parseDate(task[3]));
+      
+      
+//       // Parse the created date
+//       return createdDate >= weekStart && createdDate <= weekEnd;
+//     });
+// console.log("createdDate: ",filteredTasks);
+//     // Calculate counts for tasks
+//     let totalWork = filteredTasks.length;
+//     let workDone = 0;
+//     let workDoneOnTime = 0;
+//     let workNotDoneOnTime = 0;
+//     let pendingTasks = 0;
+//     let completedButNotOnTime = 0;
+
+//     filteredTasks.forEach((task) => {
+//       const completedDate = task[7] ? parseDate(task[7]) : null; // Parse the completed date
+//       const deadlineDate = parseDate(task[4]); // Parse the deadline date
+
+//       // Pending tasks handling
+//       if (!completedDate) {
+//         pendingTasks++; // Task is pending if no completed date
+//       } else {
+//         // Task completed within this week or month
+//         if (completedDate >= weekStart && completedDate <= weekEnd) {
+//           workDone++;
+
+//           if (completedDate <= deadlineDate) {
+//             workDoneOnTime++;
+//           } else {
+//             workNotDoneOnTime++;
+//             completedButNotOnTime++;
+//           }
+//         }
+//       }
+//     });
+
+//     // Return the filtered tasks and count data
+//     let result = {
+//       totalWork,
+//       workDone,
+//       workDoneOnTime,
+//       workNotDoneOnTime,
+//       pendingTasks,
+//       completedButNotOnTime,
+//       tasks: filteredTasks.map((r) => ({
+//         TaskID: r[0],
+//         Name: r[1],
+//         TaskName: r[2],
+//         CreatedDate: r[3],
+//         Deadline: r[4],
+//         Revision1: r[5],
+//         Revision2: r[6],
+//         FinalDate: r[7],
+//         Revisions: parseInt(r[8]) || 0,
+//         Priority: r[9],
+//         Status: r[10] || "Pending",
+//         Followup: r[11] || "",
+//         Taskcompletedapproval: r[13] || "Pending",
+//       })),
+//     };
+
+//     res.json(result);
+//   } catch (err) {
+//     console.error("Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+
+// router.get("/filter", auth, async (req, res) => {
+//   try {
+//     const { month, week } = req.query;
+
+//     if (!month || !week) {
+//       return res.status(400).json({ error: "Month and Week are required" });
+//     }
+
+//     // -----------------------------
+//     // FETCH DATA FROM GOOGLE SHEET
+//     // -----------------------------
+//     const sheets = await getSheets();
+//     const response = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
+//       range: `${SHEET_NAME}!A2:R`,
+//     });
+
+//     const rows = response.data.values || [];
+
+//     // -----------------------------
+//     // FILTER BY LOGGED IN USER
+//     // -----------------------------
+//     let filteredTasks = rows.filter((r) => r[1] === req.user.name);
+
+//     // -----------------------------
+//     // WEEK START & END
+//     // -----------------------------
+//     const selectedMonth = Number(month) - 1;
+//     const currentYear = new Date().getFullYear(); // Dynamic year
+
+//     let weekStart = getWeekStartDate(week, currentYear, selectedMonth);
+//     let weekEnd = getWeekEndDate(weekStart);
+
+//     // -----------------------------
+//     // TASK ALIVE FILTER
+//     // -----------------------------
+//     filteredTasks = filteredTasks.filter((task) => {
+//       const createdDate = parseDate(task[3]);
+//       const completedDate = task[7] ? parseDate(task[7]) : null;
+
+//       if (!createdDate) return false;
+
+//       // Task lifetime: from created → completed (or infinity if pending)
+//       const taskEndDate = completedDate || new Date(9999, 11, 31);
+
+//       // Task is alive in the selected week
+//       return createdDate <= weekEnd && taskEndDate >= weekStart;
+//     });
+
+//     // -----------------------------
+//     // COUNTS
+//     // -----------------------------
+//     let totalWork = filteredTasks.length;
+//     let completedTaskCount = 0;
+//     let pendingTaskCount = 0;
+//     let onTimeCount = 0;
+//     let delayedCount = 0;
+
+//     filteredTasks.forEach((task) => {
+//       const completedDate = task[7] ? parseDate(task[7]) : null;
+//       const deadlineDate = parseDate(task[4]);
+
+//       if (completedDate && completedDate >= weekStart && completedDate <= weekEnd) {
+//         completedTaskCount++;
+
+//         if (deadlineDate && completedDate <= deadlineDate) {
+//           onTimeCount++;
+//         } else {
+//           delayedCount++;
+//         }
+//       } else {
+//         pendingTaskCount++;
+//       }
+//     });
+
+//     // -----------------------------
+//     // PERCENTAGES
+//     // -----------------------------
+//     const pendingTaskPercentage = totalWork
+//       ? ((pendingTaskCount / totalWork) * 100).toFixed(2)
+//       : 0;
+
+//     const delayedWorkPercentage = completedTaskCount
+//       ? ((delayedCount / completedTaskCount) * 100).toFixed(2)
+//       : 0;
+
+//     // -----------------------------
+//     // FINAL RESPONSE
+//     // -----------------------------
+//     const result = {
+//       totalWork,
+//       completedTaskCount,
+//       pendingTaskCount,
+//       pendingTaskPercentage,
+//       onTimeCount,
+//       delayedWorkPercentage,
+//       tasks: filteredTasks.map((r) => ({
+//         TaskID: r[0],
+//         Name: r[1],
+//         TaskName: r[2],
+//         CreatedDate: r[3],
+//         Deadline: r[4],
+//         Revision1: r[5],
+//         Revision2: r[6],
+//         FinalDate: r[7],
+//         Revisions: parseInt(r[8]) || 0,
+//         Priority: r[9],
+//         Status: r[7] ? "Completed" : "Pending",
+//         Followup: r[11] || "",
+//         Taskcompletedapproval: r[13] || "Pending",
+//       })),
+//     };
+
+//     res.json(result);
+//   } catch (err) {
+//     console.error("Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 router.get("/filter", auth, async (req, res) => {
   try {
     const { month, week } = req.query;
+
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
     }
 
-    // Fetch task data from Google Sheets
+    // -----------------------------
+    // FETCH DATA FROM GOOGLE SHEET
+    // -----------------------------
     const sheets = await getSheets();
-    const fetch = await sheets.spreadsheets.values.get({
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_DELEGATION,
       range: `${SHEET_NAME}!A2:R`,
     });
 
-    const rows = fetch.data.values || [];
-    let filteredTasks = rows.filter((r) => r[1] === req.user.name); // Filter tasks by user
+    const rows = response.data.values || [];
 
-    // Parse the month to match the expected format (e.g., '12' for December)
-    const monthRegex = new RegExp(`^${month}-`, "i");
+    // -----------------------------
+    // FILTER BY LOGGED IN USER
+    // -----------------------------
+    let filteredTasks = rows.filter((r) => r[1] === req.user.name);
 
-    // Filter tasks by month (created date or deadline date)
-    filteredTasks = filteredTasks.filter((task) => {
-      const createdDate = parseDate(task[3]); // Parse the created date
-      const deadlineDate = parseDate(task[4]); // Parse the deadline date
+    // -----------------------------
+    // CALCULATE WEEK RANGE
+    // -----------------------------
+    const year = new Date().getFullYear(); 
+    const selectedMonth = Number(month) - 1; // JS month 0-based
 
-      // If dates are invalid, skip the task
-      if (!createdDate || !deadlineDate) return false;
+    // Function to get week start (Monday)
+    function getWeekStartDate(weekNum, month, year) {
+      const firstDay = new Date(year, month, 1);
+      const dayOfWeek = firstDay.getDay(); // 0-Sun,1-Mon
+      const diff = dayOfWeek === 0 ? 1 : 8 - dayOfWeek; // adjust to Monday
+      const weekStart = new Date(year, month, 1 + diff + (weekNum - 2) * 7);
+      return weekStart;
+    }
 
-      // Filter by month (created date and deadline date)
-      const matchesMonth = monthRegex.test(createdDate.toISOString().slice(0, 7)) || monthRegex.test(deadlineDate.toISOString().slice(0, 7));
-      return matchesMonth;
-    });
+    // Week start & end
+    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
 
-    // Get the start and end dates of the selected week (in the selected month)
-    const weekStart = getWeekStartDate(week, 2025, month - 1); // Get the start of the selected week (month is zero-indexed)
-    const weekEnd = getWeekEndDate(weekStart); // Get the end of the selected week
-
-    console.log(`Selected Month: ${month}, Week: ${week}`);
-    console.log(`Week Start: ${weekStart.toISOString()}`);
-    console.log(`Week End: ${weekEnd.toISOString()}`);
-
-    console.log("filteredTasks: ", filteredTasks);
-    
-
-    // Filter tasks by week (tasks created within the selected week)
+    // -----------------------------
+    // FILTER TASKS BY WEEK/Month RANGE
+    // -----------------------------
     filteredTasks = filteredTasks.filter((task) => {
       const createdDate = parseDate(task[3]);
-      
-      console.log("parseDate(task[3]): ", parseDate(task[3]));
-      
-      
-      // Parse the created date
-      return createdDate >= weekStart && createdDate <= weekEnd;
+      const completedDate = task[7] ? parseDate(task[7]) : null;
+      if (!createdDate) return false;
+
+      // Task alive in this week
+      return createdDate <= weekEnd && (!completedDate || completedDate >= weekStart);
     });
-console.log("createdDate: ",filteredTasks);
-    // Calculate counts for tasks
+
+    // -----------------------------
+    // CALCULATE COUNTS
+    // -----------------------------
     let totalWork = filteredTasks.length;
-    let workDone = 0;
-    let workDoneOnTime = 0;
-    let workNotDoneOnTime = 0;
-    let pendingTasks = 0;
-    let completedButNotOnTime = 0;
+    let completedTaskCount = 0;
+    let pendingTaskCount = 0;
+    let onTimeCount = 0;
+    let delayedCount = 0;
 
     filteredTasks.forEach((task) => {
-      const completedDate = task[7] ? parseDate(task[7]) : null; // Parse the completed date
-      const deadlineDate = parseDate(task[4]); // Parse the deadline date
+      const completedDate = task[7] ? parseDate(task[7]) : null;
+      const deadlineDate = parseDate(task[4]);
 
-      // Pending tasks handling
-      if (!completedDate) {
-        pendingTasks++; // Task is pending if no completed date
-      } else {
-        // Task completed within this week or month
-        if (completedDate >= weekStart && completedDate <= weekEnd) {
-          workDone++;
-
-          if (completedDate <= deadlineDate) {
-            workDoneOnTime++;
-          } else {
-            workNotDoneOnTime++;
-            completedButNotOnTime++;
-          }
+      // Completed in selected week
+      if (completedDate && completedDate >= weekStart && completedDate <= weekEnd) {
+        completedTaskCount++;
+        if (deadlineDate && completedDate <= deadlineDate) {
+          onTimeCount++;
+        } else {
+          delayedCount++;
         }
+      } else {
+        pendingTaskCount++;
       }
     });
 
-    // Return the filtered tasks and count data
-    let result = {
+    // -----------------------------
+    // PERCENTAGES
+    // -----------------------------
+    const pendingTaskPercentage = totalWork
+      ? ((pendingTaskCount / totalWork) * 100).toFixed(2)
+      : 0;
+    const delayedWorkPercentage = completedTaskCount
+      ? ((delayedCount / completedTaskCount) * 100).toFixed(2)
+      : 0;
+
+    // -----------------------------
+    // FINAL RESPONSE
+    // -----------------------------
+    const result = {
       totalWork,
-      workDone,
-      workDoneOnTime,
-      workNotDoneOnTime,
-      pendingTasks,
-      completedButNotOnTime,
+      completedTaskCount,
+      pendingTaskCount,
+      pendingTaskPercentage,
+      onTimeCount,
+      delayedWorkPercentage,
+      weekStart: weekStart.toISOString().slice(0, 10),
+      weekEnd: weekEnd.toISOString().slice(0, 10),
       tasks: filteredTasks.map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -449,7 +698,7 @@ console.log("createdDate: ",filteredTasks);
         FinalDate: r[7],
         Revisions: parseInt(r[8]) || 0,
         Priority: r[9],
-        Status: r[10] || "Pending",
+        Status: r[7] ? "Completed" : "Pending",
         Followup: r[11] || "",
         Taskcompletedapproval: r[13] || "Pending",
       })),
@@ -463,6 +712,28 @@ console.log("createdDate: ",filteredTasks);
 });
 
 
+// -----------------------------
+// HELPER: Get Week Start & End (Monday → Sunday)
+// -----------------------------
+function getWeekStartEnd(month, year, weekNumber) {
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+
+  // Find first Monday of the month
+  let firstMonday = new Date(firstDayOfMonth);
+  while (firstMonday.getDay() !== 1) firstMonday.setDate(firstMonday.getDate() + 1);
+
+  // Week start
+  let weekStart = new Date(firstMonday);
+  weekStart.setDate(weekStart.getDate() + (weekNumber - 1) * 7);
+
+  // Week end = Sunday
+  let weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  // Limit weekEnd to last day of month + include overflow to next month
+  return { weekStart, weekEnd };
+}
 
 
 //=========================================================
