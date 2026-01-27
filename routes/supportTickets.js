@@ -6,6 +6,10 @@ const { parser } = require("../cloudinary"); // multer + cloudinary
 
 const router = express.Router();
 const SHEET_NAME = "SupportTicketsMaster";
+
+// ======================================================
+// TICKET ID GENERATOR → ST + 4 random digits
+// ======================================================
 const generateTicketID = () => {
   const random4Digit = Math.floor(1000 + Math.random() * 9000);
   return `ST${random4Digit}`;
@@ -15,7 +19,6 @@ const generateTicketID = () => {
 // DATE FORMATTER → dd/mm/yyyy hh:mm:ss (IST)
 // ======================================================
 function formatDateDDMMYYYYHHMMSS(date = new Date()) {
-  // Convert to IST (UTC + 5:30)
   const utc = date.getTime() + date.getTimezoneOffset() * 60000;
   const istOffset = 5.5 * 60 * 60 * 1000;
   const istDate = new Date(utc + istOffset);
@@ -27,7 +30,7 @@ function formatDateDDMMYYYYHHMMSS(date = new Date()) {
   const min = String(istDate.getMinutes()).padStart(2, "0");
   const ss = String(istDate.getSeconds()).padStart(2, "0");
 
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`; // clean string, no commas, no quotes
 }
 
 /* ================= CREATE TICKET ================= */
@@ -42,8 +45,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       return res.status(400).json({ error: "Cannot assign ticket to yourself" });
 
     const sheets = await getSheets();
-    // const ticketID = nanoid(6);
-      const ticketID = generateTicketID();
+    const ticketID = generateTicketID();
     const createdDate = formatDateDDMMYYYYHHMMSS(); // IST
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";
@@ -54,7 +56,16 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [
-          [ticketID, req.user.name, AssignedTo, Issue, status, createdDate, "", photoUrl],
+          [
+            ticketID,
+            req.user.name,
+            AssignedTo,
+            Issue,
+            status,
+            createdDate, // clean date
+            "",
+            photoUrl,
+          ],
         ],
       },
     });
@@ -84,7 +95,7 @@ router.get("/created", auth, async (req, res) => {
         AssignedTo: r[2],
         Issue: r[3],
         Status: r[4],
-        CreatedDate: r[5],
+        CreatedDate: r[5] || "",
         DoneDate: r[6] || "",
         IssuePhoto: r[7] || "",
       }));
@@ -113,7 +124,7 @@ router.get("/assigned", auth, async (req, res) => {
         AssignedTo: r[2],
         Issue: r[3],
         Status: r[4],
-        CreatedDate: r[5],
+        CreatedDate: r[5] || "",
         DoneDate: r[6] || "",
         IssuePhoto: r[7] || "",
       }));
@@ -151,7 +162,7 @@ router.get("/all", auth, async (req, res) => {
         AssignedTo: r[2],
         Issue: r[3],
         Status: r[4],
-        CreatedDate: r[5],
+        CreatedDate: r[5] || "",
         DoneDate: r[6] || "",
         IssuePhoto: r[7] || "",
       }));
@@ -162,6 +173,164 @@ router.get("/all", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch tickets" });
   }
 });
+
+
+router.get("/filter", auth, async (req, res) => {
+  try {
+    const { month, week } = req.query;
+    if (!month || !week) {
+      return res.status(400).json({ error: "Month and Week are required" });
+    }
+
+    const userName = req.user.name.trim().toLowerCase();
+
+    // ---------------- FETCH SHEET ----------------
+    const sheets = await getSheets();
+    const sheetRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+      range: `${SHEET_NAME}!A2:H`,
+    });
+
+    const rows = sheetRes.data.values || [];
+
+    // ---------------- DATE HELPERS ----------------
+    function parseDDMMYYYY(str) {
+      if (!str) return null;
+      const p = str.split(" ")[0].split("/");
+      if (p.length !== 3) return null;
+      const [d, m, y] = p;
+      const year = y.length === 2 ? 2000 + +y : +y;
+      return new Date(year, +m - 1, +d);
+    }
+
+    function workingDaysBetween(start, end) {
+      let count = 0;
+      const cur = new Date(start);
+      while (cur <= end) {
+        const day = cur.getDay();
+        if (day !== 0 && day !== 6) count++;
+        cur.setDate(cur.getDate() + 1);
+      }
+      return count - 1;
+    }
+
+    // ---------------- WEEK RANGE ----------------
+    const year = new Date().getFullYear();
+    const selectedMonth = Number(month) - 1;
+
+    function getWeekStartDate(weekNum, month, year) {
+      const firstDay = new Date(year, month, 1);
+      const dow = firstDay.getDay();
+      const diff = dow === 0 ? 1 : 8 - dow;
+      return new Date(year, month, 1 + diff + (weekNum - 2) * 7);
+    }
+
+    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    // ---------------- CORE LOGIC ----------------
+    function calculateTickets(filteredRows) {
+      let total = 0;
+      let pending = 0;
+      let completed = 0;
+      let delayed = 0;
+      const tickets = [];
+
+      filteredRows.forEach((r) => {
+        const createdDate = parseDDMMYYYY(r[5]);
+        const doneDate = parseDDMMYYYY(r[6]);
+        if (!createdDate) return;
+
+        // ✅ TOTAL CONDITION (MOST IMPORTANT FIX)
+        const shouldCount =
+          createdDate <= weekEnd &&
+          (!doneDate || doneDate >= weekStart);
+
+        if (!shouldCount) return;
+
+        total++;
+
+        // ✅ COMPLETED
+        if (doneDate && doneDate >= weekStart && doneDate <= weekEnd) {
+          completed++;
+
+          const wd = workingDaysBetween(createdDate, doneDate);
+          if (wd > 3) delayed++;
+        }
+        // ✅ PENDING
+        else {
+          pending++;
+        }
+
+        tickets.push({
+          TicketID: r[0],
+          CreatedBy: r[1],
+          AssignedTo: r[2],
+          Issue: r[3],
+          Status: r[4],
+          CreatedDate: r[5],
+          DoneDate: r[6] || ""
+        });
+      });
+
+      return {
+        total,
+        pending,
+        completed,
+        delayed,
+        pendingPercentage: total
+          ? ((pending / total) * 100).toFixed(2)
+          : "0.00",
+        delayedPercentage: total
+          ? ((delayed / total) * 100).toFixed(2)
+          : "0.00",
+        tickets
+      };
+    }
+
+    // ---------------- FILTER USER ----------------
+    const assignedRows = rows.filter(
+      (r) => r[2]?.trim().toLowerCase() === userName
+    );
+
+    const createdRows = rows.filter(
+      (r) => r[1]?.trim().toLowerCase() === userName
+    );
+
+    const assignedData = calculateTickets(assignedRows);
+    const createdData = calculateTickets(createdRows);
+
+    // ---------------- RESPONSE ----------------
+    res.json({
+      assigned: {
+        assignedTotalTicket: assignedData.total,
+        assignedPendingTicket: assignedData.pending,
+        assignedCompletedTicket: assignedData.completed,
+        assignedDelayedTicket: assignedData.delayed,
+        assignedPendingPercentage: assignedData.pendingPercentage,
+        assignedDelayPercentage: assignedData.delayedPercentage,
+        tickets: assignedData.tickets
+      },
+      created: {
+        createdTotalTicket: createdData.total,
+        createdPendingTicket: createdData.pending,
+        createdCompletedTicket: createdData.completed,
+        createdDelayedTicket: createdData.delayed,
+        createdPendingPercentage: createdData.pendingPercentage,
+        createdDelayPercentage: createdData.delayedPercentage,
+        tickets: createdData.tickets
+      }
+    });
+
+  } catch (err) {
+    console.error("Support Ticket Filter Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 
 /* ================= UPDATE STATUS ================= */
 router.patch("/status/:ticketID", auth, async (req, res) => {
@@ -181,7 +350,8 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
     const ticket = rows[index];
     ticket[4] = Status;
-    ticket[6] = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // IST DoneDate
+    ticket[6] =
+      Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // clean DoneDate
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,

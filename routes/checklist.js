@@ -408,108 +408,130 @@ router.patch("/done/:id", auth, async (req, res) => {
   }
 });
 
-
 router.get("/filter", auth, async (req, res) => {
   try {
+    const { month, week } = req.query;
+
+    if (!month || !week) {
+      return res.status(400).json({ error: "Month and Week are required" });
+    }
+
+    // -----------------------------
+    // FETCH DATA FROM GOOGLE SHEET
+    // -----------------------------
     const sheets = await getSheets();
     const fetchRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-      range: `${MASTER_SHEET}!A2:K`,
+      range: `${MASTER_SHEET}!A2:K`, // Range for your checklist data
     });
 
     const rows = fetchRes.data.values || [];
-    const { month, week, startDate, endDate } = req.query;
-    const userName = req.user.name.trim().toLowerCase();
 
-    // Parse dd/mm/yyyy (ignore time)
+    // -----------------------------
+    // FILTER BY LOGGED IN USER
+    // -----------------------------
+    let filteredRows = rows.filter((r) => r[0].trim().toLowerCase() === req.user.name.trim().toLowerCase());
+
+    // -----------------------------
+    // PARSE DD/MM/YYYY (Used for date comparison)
+    // -----------------------------
     function parseDDMMYYYY(str) {
       if (!str) return null;
-      const parts = str.split(" ")[0].split("/");
+      const parts = str.split(" ")[0].split("/"); // Ignore the time part
       if (parts.length !== 3) return null;
       const [d, m, y] = parts;
       const year = y.length === 2 ? 2000 + +y : +y;
       return new Date(year, +m - 1, +d);
     }
 
-    // Days in month helper
-    function daysInMonth(year, month) {
-      return new Date(year, month, 0).getDate();
+    // -----------------------------
+    // CALCULATE WEEK RANGE (Same as Delegation API)
+    // -----------------------------
+    const year = new Date().getFullYear(); 
+    const selectedMonth = Number(month) - 1; // JS month is 0-based
+
+    // Function to get week start (Monday)
+    function getWeekStartDate(weekNum, month, year) {
+      const firstDay = new Date(year, month, 1);
+      const dayOfWeek = firstDay.getDay(); // 0-Sun,1-Mon
+      const diff = dayOfWeek === 0 ? 1 : 8 - dayOfWeek; // adjust to Monday
+      const weekStart = new Date(year, month, 1 + diff + (weekNum - 2) * 7);
+      return weekStart;
     }
 
-    // Check if date is in month/week
-    function isInMonthWeek(date, monthNum, weekNum) {
-      if (!date) return false;
-      if (date.getMonth() + 1 !== +monthNum) return false;
-      const day = date.getDate();
-      const lastDay = daysInMonth(date.getFullYear(), monthNum);
-      const startDay = (weekNum - 1) * 7 + 1;
-      let endDay = weekNum * 7;
-      if (endDay > lastDay) endDay = lastDay;
-      return day >= startDay && day <= endDay;
-    }
+    // Week start & end (same logic as delegation API)
+    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
 
-    const filteredRows = rows.filter((r) => {
-      const rowName = (r[0] || "").trim().toLowerCase();
-      const planned = parseDDMMYYYY(r[6]);
-      const actual = parseDDMMYYYY(r[7]);
-
-      // 1️⃣ User filter
-      if (rowName !== userName) return false;
-
-      // 2️⃣ Month/week filter
-      if (month && week) {
-        const m = parseInt(month);
-        const w = parseInt(week);
-        const inWeek = (planned && isInMonthWeek(planned, m, w)) || (actual && isInMonthWeek(actual, m, w));
-        if (!inWeek) return false;
-      }
-
-      // 3️⃣ Date range filter
-      if (startDate || endDate) {
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-        const datesToCheck = [planned, actual].filter(Boolean);
-        if (datesToCheck.length === 0) return false;
-        const inRange = datesToCheck.some(d => {
-          if (start && d < start) return false;
-          if (end && d > end) return false;
-          return true;
-        });
-        if (!inRange) return false;
-      }
-
-      return true;
+    // -----------------------------
+    // FILTER TASKS BY WEEK/Month RANGE
+    // -----------------------------
+    filteredRows = filteredRows.filter((task) => {
+      const plannedDate = parseDDMMYYYY(task[6]);  // Planned Date
+      const actualDate = parseDDMMYYYY(task[7]);  // Actual Date
+      
+      // Check if the task is within the selected week range
+      return (plannedDate >= weekStart && plannedDate <= weekEnd) || (actualDate >= weekStart && actualDate <= weekEnd);
     });
 
-    const totalTasks = filteredRows.length;
-    const completedTasks = filteredRows.filter(r => r[7] && r[7].trim() !== "").length;
-    const pendingTasks = totalTasks - completedTasks;
-    const delayedTasks = filteredRows.filter(r => {
-      const planned = parseDDMMYYYY(r[6]);
-      const actual = parseDDMMYYYY(r[7]);
-      return actual && planned && actual > planned;
-    }).length;
+    // -----------------------------
+    // CALCULATE COUNTS
+    // -----------------------------
+    let totalTasks = filteredRows.length;
+    let completedTasks = 0;
+    let pendingTasks = 0;
+    let onTimeTasks = 0;
+    let delayedTasks = 0;
 
+    filteredRows.forEach((task) => {
+      const plannedDate = parseDDMMYYYY(task[6]);  // Planned Date
+      const actualDate = parseDDMMYYYY(task[7]);  // Actual Date
+      
+      // Task completed within the selected week
+      if (actualDate && actualDate >= weekStart && actualDate <= weekEnd) {
+        completedTasks++;
+        if (plannedDate && actualDate <= plannedDate) {
+          onTimeTasks++;  // Task completed on time
+        } else {
+          delayedTasks++;  // Task is delayed
+        }
+      } else {
+        pendingTasks++;
+      }
+    });
+
+    // -----------------------------
+    // PERCENTAGES
+    // -----------------------------
     const pendingPercentage = totalTasks ? ((pendingTasks / totalTasks) * 100).toFixed(2) : "0.00";
     const delayedPercentage = totalTasks ? ((delayedTasks / totalTasks) * 100).toFixed(2) : "0.00";
+    const onTimePercentage = totalTasks ? ((onTimeTasks / totalTasks) * 100).toFixed(2) : "0.00";
 
+    // -----------------------------
+    // FINAL RESPONSE
+    // -----------------------------
     res.json({
-      tasks: filteredRows.map(r => ({
-        Name: r[0],
-        Email: r[1],
-        Department: r[2],
-        TaskID: r[3],
-        Freq: r[4],
-        Task: r[5],
-        Planned: r[6],
-        Actual: r[7],
-      })),
       totalTasks,
       completedTasks,
       pendingTasks,
+      onTimeTasks,
       delayedTasks,
       pendingPercentage,
       delayedPercentage,
+      onTimePercentage,
+      weekStart: weekStart.toISOString().slice(0, 10),  // Week start date
+      weekEnd: weekEnd.toISOString().slice(0, 10),      // Week end date
+      tasks: filteredRows.map((task) => ({
+        Name: task[0],
+        Email: task[1],
+        Department: task[2],
+        TaskID: task[3],
+        Freq: task[4],
+        Task: task[5],
+        Planned: task[6],
+        Actual: task[7],
+      }))
     });
 
   } catch (err) {
