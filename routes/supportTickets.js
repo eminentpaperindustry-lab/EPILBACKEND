@@ -177,7 +177,7 @@ router.get("/all", auth, async (req, res) => {
 
 router.get("/filter", auth, async (req, res) => {
   try {
-    const { month, week } = req.query;
+    const { month, week ,selectedName } = req.query;
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
     }
@@ -188,7 +188,7 @@ router.get("/filter", auth, async (req, res) => {
     const sheets = await getSheets();
     const sheetRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
-      range: `${SHEET_NAME}!A2:H`,
+      range: `${SHEET_NAME}!A2:H`, // Range for your checklist data
     });
 
     const rows = sheetRes.data.values || [];
@@ -196,7 +196,7 @@ router.get("/filter", auth, async (req, res) => {
     // ---------------- DATE HELPERS ----------------
     function parseDDMMYYYY(str) {
       if (!str) return null;
-      const p = str.split(" ")[0].split("/");
+      const p = str.split(" ")[0].split("/"); // Ignore the time part
       if (p.length !== 3) return null;
       const [d, m, y] = p;
       const year = y.length === 2 ? 2000 + +y : +y;
@@ -208,26 +208,29 @@ router.get("/filter", auth, async (req, res) => {
       const cur = new Date(start);
       while (cur <= end) {
         const day = cur.getDay();
-        if (day !== 0 && day !== 6) count++;
+        if (day !== 0 && day !== 6) count++;  // Exclude weekends
         cur.setDate(cur.getDate() + 1);
       }
       return count - 1;
     }
 
     // ---------------- WEEK RANGE ----------------
-    const year = new Date().getFullYear();
-    const selectedMonth = Number(month) - 1;
+    const year = new Date().getFullYear();  // Get the current year dynamically
+    const selectedMonth = Number(month) - 1; // JS month is 0-based
 
+    // Function to get the start date of the week (Monday)
     function getWeekStartDate(weekNum, month, year) {
       const firstDay = new Date(year, month, 1);
       const dow = firstDay.getDay();
-      const diff = dow === 0 ? 1 : 8 - dow;
+      const diff = dow === 0 ? 1 : 8 - dow;  // Adjust to Monday
       return new Date(year, month, 1 + diff + (weekNum - 2) * 7);
     }
 
     const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setDate(weekEnd.getDate() + 6);  // Sunday of the same week
+console.log("Support Ticket weekStart : ", weekStart , "weekEnd : " , weekEnd);
+
 
     // ---------------- CORE LOGIC ----------------
     function calculateTickets(filteredRows) {
@@ -242,10 +245,9 @@ router.get("/filter", auth, async (req, res) => {
         const doneDate = parseDDMMYYYY(r[6]);
         if (!createdDate) return;
 
-        // ✅ TOTAL CONDITION (MOST IMPORTANT FIX)
+        // ✅ TOTAL CONDITION (Check if the ticket should be counted)
         const shouldCount =
-          createdDate <= weekEnd &&
-          (!doneDate || doneDate >= weekStart);
+          createdDate <= weekEnd && (!doneDate || doneDate >= weekStart);
 
         if (!shouldCount) return;
 
@@ -256,7 +258,7 @@ router.get("/filter", auth, async (req, res) => {
           completed++;
 
           const wd = workingDaysBetween(createdDate, doneDate);
-          if (wd > 3) delayed++;
+          if (wd > 3) delayed++;  // Consider as delayed if it took more than 3 working days
         }
         // ✅ PENDING
         else {
@@ -279,30 +281,33 @@ router.get("/filter", auth, async (req, res) => {
         pending,
         completed,
         delayed,
-        pendingPercentage: total
-          ? ((pending / total) * 100).toFixed(2)
-          : "0.00",
-        delayedPercentage: total
-          ? ((delayed / total) * 100).toFixed(2)
-          : "0.00",
+        pendingPercentage: total ? ((pending / total) * 100).toFixed(2) : "0.00",
+        delayedPercentage: total ? ((delayed / total) * 100).toFixed(2) : "0.00",
         tickets
       };
     }
 
-    // ---------------- FILTER USER ----------------
-    const assignedRows = rows.filter(
-      (r) => r[2]?.trim().toLowerCase() === userName
-    );
+// Determine which name to filter by
+const nameToFilter = selectedName && selectedName.trim()
+  ? selectedName.trim().toLowerCase()
+  : userName;
 
-    const createdRows = rows.filter(
-      (r) => r[1]?.trim().toLowerCase() === userName
-    );
+// Filter rows
+const assignedRows = rows.filter(
+  (r) => r[2]?.trim().toLowerCase() === nameToFilter
+);
+
+const createdRows = rows.filter(
+  (r) => r[1]?.trim().toLowerCase() === nameToFilter
+);
 
     const assignedData = calculateTickets(assignedRows);
     const createdData = calculateTickets(createdRows);
 
     // ---------------- RESPONSE ----------------
     res.json({
+       weekStart: weekStart.toLocaleDateString('en-CA'),
+      weekEnd: weekEnd.toLocaleDateString('en-CA'),
       assigned: {
         assignedTotalTicket: assignedData.total,
         assignedPendingTicket: assignedData.pending,
@@ -328,7 +333,6 @@ router.get("/filter", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 
 

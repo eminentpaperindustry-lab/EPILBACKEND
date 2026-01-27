@@ -407,10 +407,9 @@ router.patch("/done/:id", auth, async (req, res) => {
     res.status(500).json({ error: "Task not updated in Consolidated sheet" });
   }
 });
-
 router.get("/filter", auth, async (req, res) => {
   try {
-    const { month, week } = req.query;
+    const { month, week , selectedName } = req.query;
 
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
@@ -422,57 +421,81 @@ router.get("/filter", auth, async (req, res) => {
     const sheets = await getSheets();
     const fetchRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_CHECKLIST,
-      range: `${MASTER_SHEET}!A2:K`, // Range for your checklist data
+      range: `${MASTER_SHEET}!A2:K`, 
     });
 
     const rows = fetchRes.data.values || [];
 
     // -----------------------------
-    // FILTER BY LOGGED IN USER
-    // -----------------------------
-    let filteredRows = rows.filter((r) => r[0].trim().toLowerCase() === req.user.name.trim().toLowerCase());
+// Decide which name to filter by
+const nameToFilter = selectedName && selectedName.trim()
+  ? selectedName.trim().toLowerCase()
+  : req.user.name.trim().toLowerCase();
+
+// Filter rows
+let filteredRows = rows.filter(
+  (r) => r[0] && r[0].trim().toLowerCase() === nameToFilter
+);
 
     // -----------------------------
-    // PARSE DD/MM/YYYY (Used for date comparison)
+    // PARSE DD/MM/YYYY
     // -----------------------------
     function parseDDMMYYYY(str) {
       if (!str) return null;
-      const parts = str.split(" ")[0].split("/"); // Ignore the time part
+      const parts = str.split(" ")[0].split("/"); 
       if (parts.length !== 3) return null;
       const [d, m, y] = parts;
       const year = y.length === 2 ? 2000 + +y : +y;
-      return new Date(year, +m - 1, +d);
+      const date = new Date(year, +m - 1, +d);
+      return isNaN(date.getTime()) ? null : date;
     }
 
     // -----------------------------
-    // CALCULATE WEEK RANGE (Same as Delegation API)
+    // CALCULATE DATE RANGE (Monday to Sunday or Full Month)
     // -----------------------------
-    const year = new Date().getFullYear(); 
-    const selectedMonth = Number(month) - 1; // JS month is 0-based
+    const currentYear = new Date().getFullYear(); 
+    const selectedMonth = Number(month) - 1; 
+    let weekStart, weekEnd;
 
-    // Function to get week start (Monday)
-    function getWeekStartDate(weekNum, month, year) {
-      const firstDay = new Date(year, month, 1);
-      const dayOfWeek = firstDay.getDay(); // 0-Sun,1-Mon
-      const diff = dayOfWeek === 0 ? 1 : 8 - dayOfWeek; // adjust to Monday
-      const weekStart = new Date(year, month, 1 + diff + (weekNum - 2) * 7);
-      return weekStart;
+    if (week === "all") {
+      // Case: Full Month (1st to Last Day)
+      weekStart = new Date(currentYear, selectedMonth, 1);
+      weekStart.setHours(0, 0, 0, 0);
+
+      weekEnd = new Date(currentYear, selectedMonth + 1, 0);
+      weekEnd.setHours(23, 59, 59, 999);
+    } else {
+      // Case: Specific Week (Strictly Monday to Sunday)
+      const firstDayOfMonth = new Date(currentYear, selectedMonth, 1);
+      const dayName = firstDayOfMonth.getDay(); // 0=Sun, 1=Mon...
+
+      // Find Monday of Week 1
+      const diffToMonday = (dayName === 0) ? -6 : 1 - dayName;
+      const firstMonday = new Date(currentYear, selectedMonth, 1 + diffToMonday);
+
+      // Set weekStart based on week number
+      weekStart = new Date(firstMonday);
+      weekStart.setDate(firstMonday.getDate() + (Number(week) - 1) * 7);
+      weekStart.setHours(0, 0, 0, 0);
+
+      // Set weekEnd to Sunday
+      weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
     }
 
-    // Week start & end (same logic as delegation API)
-    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
-
     // -----------------------------
-    // FILTER TASKS BY WEEK/Month RANGE
+    // FILTER TASKS BY CALCULATED RANGE
     // -----------------------------
     filteredRows = filteredRows.filter((task) => {
-      const plannedDate = parseDDMMYYYY(task[6]);  // Planned Date
-      const actualDate = parseDDMMYYYY(task[7]);  // Actual Date
+      const plannedDate = parseDDMMYYYY(task[6]);  
+      const actualDate = parseDDMMYYYY(task[7]);   
       
-      // Check if the task is within the selected week range
-      return (plannedDate >= weekStart && plannedDate <= weekEnd) || (actualDate >= weekStart && actualDate <= weekEnd);
+      // Range check logic
+      const isPlannedInWeek = plannedDate && plannedDate >= weekStart && plannedDate <= weekEnd;
+      const isActualInWeek = actualDate && actualDate >= weekStart && actualDate <= weekEnd;
+
+      return isPlannedInWeek || isActualInWeek;
     });
 
     // -----------------------------
@@ -483,18 +506,19 @@ router.get("/filter", auth, async (req, res) => {
     let pendingTasks = 0;
     let onTimeTasks = 0;
     let delayedTasks = 0;
+    console.log("checklist Week Start : ", weekStart , "weekend : ", weekEnd);
 
     filteredRows.forEach((task) => {
-      const plannedDate = parseDDMMYYYY(task[6]);  // Planned Date
-      const actualDate = parseDDMMYYYY(task[7]);  // Actual Date
+      const plannedDate = parseDDMMYYYY(task[6]);  
+      const actualDate = parseDDMMYYYY(task[7]);   
       
-      // Task completed within the selected week
+      // Task completed within the range
       if (actualDate && actualDate >= weekStart && actualDate <= weekEnd) {
         completedTasks++;
         if (plannedDate && actualDate <= plannedDate) {
-          onTimeTasks++;  // Task completed on time
+          onTimeTasks++; 
         } else {
-          delayedTasks++;  // Task is delayed
+          delayedTasks++; 
         }
       } else {
         pendingTasks++;
@@ -520,8 +544,8 @@ router.get("/filter", auth, async (req, res) => {
       pendingPercentage,
       delayedPercentage,
       onTimePercentage,
-      weekStart: weekStart.toISOString().slice(0, 10),  // Week start date
-      weekEnd: weekEnd.toISOString().slice(0, 10),      // Week end date
+      weekStart: weekStart.toLocaleDateString('en-CA'), 
+      weekEnd: weekEnd.toLocaleDateString('en-CA'),
       tasks: filteredRows.map((task) => ({
         Name: task[0],
         Email: task[1],
@@ -531,6 +555,7 @@ router.get("/filter", auth, async (req, res) => {
         Task: task[5],
         Planned: task[6],
         Actual: task[7],
+        Status: task[7] ? "Completed" : "Pending"
       }))
     });
 
@@ -539,8 +564,6 @@ router.get("/filter", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-
 router.get("/test", (req, res) => {
   res.json({ ok: true, msg: "Route works!" });
 });

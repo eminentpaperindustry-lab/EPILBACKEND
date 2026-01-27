@@ -142,7 +142,7 @@ router.get("/all", auth, async (req, res) => {
 
 router.get("/filter", auth, async (req, res) => {
   try {
-    const { month, week } = req.query;
+    const { month, week,selectedName } = req.query;
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
     }
@@ -165,7 +165,8 @@ router.get("/filter", auth, async (req, res) => {
       if (p.length !== 3) return null;
       const [d, m, y] = p;
       const year = y.length === 2 ? 2000 + +y : +y;
-      return new Date(year, +m - 1, +d);
+      const date = new Date(year, +m - 1, +d);
+      return isNaN(date.getTime()) ? null : date;
     }
 
     function workingDaysBetween(start, end) {
@@ -179,20 +180,37 @@ router.get("/filter", auth, async (req, res) => {
       return count - 1;
     }
 
-    // ---------------- WEEK RANGE ----------------
-    const year = new Date().getFullYear();
+    // ---------------- CALCULATE DATE RANGE ----------------
+    const currentYear = new Date().getFullYear();
     const selectedMonth = Number(month) - 1;
+    let weekStart, weekEnd;
 
-    function getWeekStartDate(weekNum, month, year) {
-      const firstDay = new Date(year, month, 1);
-      const dow = firstDay.getDay();
-      const diff = dow === 0 ? 1 : 8 - dow;
-      return new Date(year, month, 1 + diff + (weekNum - 2) * 7);
+    if (week === "all") {
+      // Logic: First to Last Day of the Month
+      weekStart = new Date(currentYear, selectedMonth, 1);
+      weekStart.setHours(0, 0, 0, 0);
+
+      weekEnd = new Date(currentYear, selectedMonth + 1, 0);
+      weekEnd.setHours(23, 59, 59, 999);
+    } else {
+      // Logic: Strictly Monday to Sunday
+      const firstDayOfMonth = new Date(currentYear, selectedMonth, 1);
+      const dayName = firstDayOfMonth.getDay(); // 0=Sun, 1=Mon
+
+      // Find Monday of Week 1
+      const diffToMonday = (dayName === 0) ? -6 : 1 - dayName;
+      const firstMonday = new Date(currentYear, selectedMonth, 1 + diffToMonday);
+
+      // Jump to selected week
+      weekStart = new Date(firstMonday);
+      weekStart.setDate(firstMonday.getDate() + (Number(week) - 1) * 7);
+      weekStart.setHours(0, 0, 0, 0);
+
+      // End on Sunday
+      weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
     }
-
-    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
 
     // ---------------- CORE LOGIC ----------------
     function calculateTickets(filteredRows) {
@@ -207,23 +225,20 @@ router.get("/filter", auth, async (req, res) => {
         const doneDate = parseDDMMYYYY(r[6]);
         if (!createdDate) return;
 
-        // ✅ TOTAL CONDITION (MOST IMPORTANT FIX)
-        const shouldCount =
-          createdDate <= weekEnd &&
-          (!doneDate || doneDate >= weekStart);
+        // Condition for Total Tickets Active in this Range
+        const shouldCount = createdDate <= weekEnd && (!doneDate || doneDate >= weekStart);
 
         if (!shouldCount) return;
 
         total++;
 
-        // ✅ COMPLETED
+        // Ticket Completed WITHIN this Range
         if (doneDate && doneDate >= weekStart && doneDate <= weekEnd) {
           completed++;
-
           const wd = workingDaysBetween(createdDate, doneDate);
           if (wd > 3) delayed++;
-        }
-        // ✅ PENDING
+        } 
+        // Ticket is still Pending (or completed after this range)
         else {
           pending++;
         }
@@ -244,30 +259,34 @@ router.get("/filter", auth, async (req, res) => {
         pending,
         completed,
         delayed,
-        pendingPercentage: total
-          ? ((pending / total) * 100).toFixed(2)
-          : "0.00",
-        delayedPercentage: total
-          ? ((delayed / total) * 100).toFixed(2)
-          : "0.00",
+        pendingPercentage: total ? ((pending / total) * 100).toFixed(2) : "0.00",
+        delayedPercentage: completed ? ((delayed / completed) * 100).toFixed(2) : "0.00",
         tickets
       };
     }
+// Determine which name to filter by
+const nameToFilter = selectedName && selectedName.trim()
+  ? selectedName.trim().toLowerCase()
+  : userName;
 
-    // ---------------- FILTER USER ----------------
-    const assignedRows = rows.filter(
-      (r) => r[2]?.trim().toLowerCase() === userName
-    );
+// Filter rows
+const assignedRows = rows.filter(
+  (r) => r[2]?.trim().toLowerCase() === nameToFilter
+);
 
-    const createdRows = rows.filter(
-      (r) => r[1]?.trim().toLowerCase() === userName
-    );
+const createdRows = rows.filter(
+  (r) => r[1]?.trim().toLowerCase() === nameToFilter
+);
+
 
     const assignedData = calculateTickets(assignedRows);
     const createdData = calculateTickets(createdRows);
+console.log("Help ticket weekStart : ", weekStart , "weekEnd : " , weekEnd);
 
     // ---------------- RESPONSE ----------------
     res.json({
+      weekStart: weekStart.toLocaleDateString('en-CA'),
+      weekEnd: weekEnd.toLocaleDateString('en-CA'),
       assigned: {
         assignedTotalTicket: assignedData.total,
         assignedPendingTicket: assignedData.pending,
@@ -293,7 +312,6 @@ router.get("/filter", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /* ================= UPDATE STATUS ================= */
 router.patch("/status/:ticketID", auth, async (req, res) => {

@@ -583,13 +583,16 @@ function getWeekEndDate(weekStartDate) {
 //     res.status(500).json({ error: err.message });
 //   }
 // });
+
 router.get("/filter", auth, async (req, res) => {
   try {
-    const { month, week } = req.query;
+    const { month, week , selectedName } = req.query;
 
     if (!month || !week) {
       return res.status(400).json({ error: "Month and Week are required" });
     }
+console.log("selectedName:", selectedName);
+
 
     // -----------------------------
     // FETCH DATA FROM GOOGLE SHEET
@@ -605,37 +608,55 @@ router.get("/filter", auth, async (req, res) => {
     // -----------------------------
     // FILTER BY LOGGED IN USER
     // -----------------------------
-    let filteredTasks = rows.filter((r) => r[1] === req.user.name);
+   const nameToFilter = selectedName && selectedName.trim() ? selectedName.trim() : req.user.name.trim();
+
+let filteredTasks = rows.filter((r) => r[1]?.trim() === nameToFilter);
+
 
     // -----------------------------
-    // CALCULATE WEEK RANGE
+    // CALCULATE DATE RANGE
     // -----------------------------
     const year = new Date().getFullYear(); 
-    const selectedMonth = Number(month) - 1; // JS month 0-based
+    const selectedMonth = Number(month) - 1; // JS month 0-indexed
+    let weekStart, weekEnd;
 
-    // Function to get week start (Monday)
-    function getWeekStartDate(weekNum, month, year) {
-      const firstDay = new Date(year, month, 1);
-      const dayOfWeek = firstDay.getDay(); // 0-Sun,1-Mon
-      const diff = dayOfWeek === 0 ? 1 : 8 - dayOfWeek; // adjust to Monday
-      const weekStart = new Date(year, month, 1 + diff + (weekNum - 2) * 7);
-      return weekStart;
+    if (week === "all") {
+      // CASE: Pure Month ka data (1st to Last date)
+      weekStart = new Date(year, selectedMonth, 1);
+      weekStart.setHours(0, 0, 0, 0);
+
+      weekEnd = new Date(year, selectedMonth + 1, 0); // Month ki last date
+      weekEnd.setHours(23, 59, 59, 999);
+    } else {
+      // CASE: Specific Week (Monday to Sunday logic)
+      const firstDayOfMonth = new Date(year, selectedMonth, 1);
+      const dayName = firstDayOfMonth.getDay(); // 0=Sun, 1=Mon...
+
+      // Find Monday of Week 1
+      const diffToMonday = (dayName === 0) ? -6 : 1 - dayName;
+      const firstMonday = new Date(year, selectedMonth, 1 + diffToMonday);
+
+      // Calculate selected week's Monday
+      weekStart = new Date(firstMonday);
+      weekStart.setDate(firstMonday.getDate() + (Number(week) - 1) * 7);
+      weekStart.setHours(0, 0, 0, 0);
+
+      // Calculate selected week's Sunday
+      weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
     }
 
-    // Week start & end
-    const weekStart = getWeekStartDate(Number(week), selectedMonth, year);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
-
     // -----------------------------
-    // FILTER TASKS BY WEEK/Month RANGE
+    // FILTER TASKS BY CALCULATED RANGE
     // -----------------------------
     filteredTasks = filteredTasks.filter((task) => {
       const createdDate = parseDate(task[3]);
       const completedDate = task[7] ? parseDate(task[7]) : null;
+      
       if (!createdDate) return false;
 
-      // Task alive in this week
+      // Task active filter logic
       return createdDate <= weekEnd && (!completedDate || completedDate >= weekStart);
     });
 
@@ -648,11 +669,14 @@ router.get("/filter", auth, async (req, res) => {
     let onTimeCount = 0;
     let delayedCount = 0;
 
+    console.log("deligation Week Start : ", weekStart , "weekend : ", weekEnd);
+    
+
     filteredTasks.forEach((task) => {
       const completedDate = task[7] ? parseDate(task[7]) : null;
       const deadlineDate = parseDate(task[4]);
 
-      // Completed in selected week
+      // Count if completed within the selected range (Week or Full Month)
       if (completedDate && completedDate >= weekStart && completedDate <= weekEnd) {
         completedTaskCount++;
         if (deadlineDate && completedDate <= deadlineDate) {
@@ -685,8 +709,8 @@ router.get("/filter", auth, async (req, res) => {
       pendingTaskPercentage,
       onTimeCount,
       delayedWorkPercentage,
-      weekStart: weekStart.toISOString().slice(0, 10),
-      weekEnd: weekEnd.toISOString().slice(0, 10),
+      weekStart: weekStart.toLocaleDateString('en-CA'), 
+      weekEnd: weekEnd.toLocaleDateString('en-CA'),
       tasks: filteredTasks.map((r) => ({
         TaskID: r[0],
         Name: r[1],
@@ -710,7 +734,6 @@ router.get("/filter", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 // -----------------------------
 // HELPER: Get Week Start & End (Monday → Sunday)
