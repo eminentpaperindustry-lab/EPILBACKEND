@@ -21,6 +21,7 @@ const checklistRoutes = require("./routes/checklist");
 const employeeRouter = require("./routes/employee");
 const helpTicketsRouter = require("./routes/helpTickets");
 const additionalFeature=require("./routes/additionalFeature")
+const allDashboard = require('./routes/allDashboard')
 
 // API prefix
 app.use("/api/auth", authRoutes);
@@ -33,6 +34,7 @@ app.use("/api/checklist", checklistRoutes);
 app.use("/api/employee", employeeRouter);
 app.use("/api/helpTickets", helpTicketsRouter);
 app.use("/api/delegations", require("./routes/delegations"));
+app.use("/api/allDashboard" , allDashboard);
 
 const whatsappRoutes =require("./routes/whatsapp.js");
 app.use("/api/whatsapp", whatsappRoutes);
