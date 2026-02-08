@@ -36,47 +36,81 @@ function formatDateDDMMYYYYHHMMSS(date = new Date()) {
 /* ================= CREATE TICKET ================= */
 router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
   try {
-    const { AssignedTo, Issue } = req.body;
+    const { Issue } = req.body;
 
-    if (!AssignedTo || !Issue)
-      return res.status(400).json({ error: "AssignedTo and Issue required" });
-
-    if (AssignedTo === req.user.name)
-      return res.status(400).json({ error: "Cannot assign ticket to yourself" });
+    if (!Issue)
+      return res.status(400).json({ error: "Issue required" });
 
     const sheets = await getSheets();
-    const ticketID = generateTicketID();
     const createdDate = formatDateDDMMYYYYHHMMSS(); // IST
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
-      range: `${SHEET_NAME}!A:H`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [
-          [
-            ticketID,
-            req.user.name,
-            AssignedTo,
-            Issue,
-            status,
-            createdDate, // clean date
-            "",
-            photoUrl,
-          ],
-        ],
-      },
+    // Get all employees
+    const empRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Employee!A2:H",
     });
 
-    res.json({ ok: true, ticketID });
+    const employees = empRes.data.values || [];
+    
+    // Filter MIS employees only
+    const misEmployees = employees.filter(emp => emp[4] === "MIS");
+    
+    if (misEmployees.length === 0) {
+      return res.status(400).json({ error: "No MIS employees found" });
+    }
+
+    // Create tickets for each MIS employee
+    const ticketIDs = [];
+    
+    for (const emp of misEmployees) {
+      const ticketID = generateTicketID();
+      const empName = emp[1]; // Adjust based on your sheet structure
+      
+      // Skip if assigning to self
+      if (empName === req.user.name) {
+        continue;
+      }
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+        range: `${SHEET_NAME}!A:H`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            [
+              ticketID,
+              req.user.name, // Creator
+              empName, // Assigned to MIS employee
+              Issue,
+              status,
+              createdDate,
+              "",
+              photoUrl,
+            ],
+          ],
+        },
+      });
+      
+      ticketIDs.push(ticketID);
+    }
+
+    if (ticketIDs.length === 0) {
+      return res.status(400).json({ error: "Cannot assign tickets only to yourself" });
+    }
+
+    res.json({ 
+      ok: true, 
+      ticketIDs,
+      message: `${ticketIDs.length} ticket(s) created for MIS team` 
+    });
+
   } catch (err) {
     console.error("CREATE TICKET ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
 /* ================= GET CREATED TICKETS ================= */
 router.get("/created", auth, async (req, res) => {
   try {
@@ -337,35 +371,128 @@ const createdRows = rows.filter(
 
 
 /* ================= UPDATE STATUS ================= */
+// router.patch("/status/:ticketID", auth, async (req, res) => {
+//   try {
+//     const { Status } = req.body;
+//     if (!Status) return res.status(400).json({ error: "Status required" });
+
+//     const sheets = await getSheets();
+//     const data = await sheets.spreadsheets.values.get({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+//       range: `${SHEET_NAME}!A2:H`,
+//     });
+
+//     const rows = data.data.values || [];
+//     const index = rows.findIndex((r) => r[0] === req.params.ticketID);
+//     if (index === -1) return res.status(404).json({ error: "Ticket not found" });
+
+//     const ticket = rows[index];
+//     ticket[4] = Status;
+//     ticket[6] =
+//       Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // clean DoneDate
+
+//     await sheets.spreadsheets.values.update({
+//       spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+//       range: `${SHEET_NAME}!A${index + 2}:H${index + 2}`,
+//       valueInputOption: "USER_ENTERED",
+//       requestBody: { values: [ticket] },
+//     });
+
+//     res.json({ ok: true });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
 router.patch("/status/:ticketID", auth, async (req, res) => {
   try {
     const { Status } = req.body;
     if (!Status) return res.status(400).json({ error: "Status required" });
 
     const sheets = await getSheets();
+    
+    // Debug logging
+    console.log(`Looking for ticket ID: ${req.params.ticketID}`);
+    console.log(`New status: ${Status}`);
+
     const data = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
       range: `${SHEET_NAME}!A2:H`,
     });
 
     const rows = data.data.values || [];
-    const index = rows.findIndex((r) => r[0] === req.params.ticketID);
-    if (index === -1) return res.status(404).json({ error: "Ticket not found" });
+    console.log(`Total rows in sheet: ${rows.length}`);
+    
+    // Find all matching tickets
+    const matchingTickets = [];
+    let foundTicket = null;
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      // First find the ticket by ID
+      if (row[0] === req.params.ticketID) {
+        foundTicket = { row, index: i };
+      }
+    }
+    
+    if (!foundTicket) {
+      console.log("Ticket not found by ID");
+      return res.status(404).json({ error: "Ticket not found" });
+    }
 
-    const ticket = rows[index];
-    ticket[4] = Status;
-    ticket[6] =
-      Status === "Done" ? formatDateDDMMYYYYHHMMSS() : ""; // clean DoneDate
+    const ticketName = foundTicket.row[3];
+    console.log(`Found ticket name: "${ticketName}" at row ${foundTicket.index + 2}`);
+    
+    if (!ticketName) {
+      return res.status(400).json({ error: "Ticket name not found" });
+    }
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
-      range: `${SHEET_NAME}!A${index + 2}:H${index + 2}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [ticket] },
+    // Now find all tickets with same name
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row[3] && row[3].trim() === ticketName.trim()) {
+        matchingTickets.push({ row, index: i });
+        console.log(`Matching ticket found at row ${i + 2}: ${row[0]} - ${row[3]}`);
+      }
+    }
+
+    console.log(`Total matching tickets: ${matchingTickets.length}`);
+
+    const doneDate = Status === "Done" ? formatDateDDMMYYYYHHMMSS() : "";
+    
+    // Update each matching ticket
+    for (const ticket of matchingTickets) {
+      const rowNum = ticket.index + 2;
+      console.log(`Updating row ${rowNum}...`);
+      
+      try {
+        // Update the entire row with new values
+        const updatedRow = [...ticket.row];
+        updatedRow[4] = Status; // Status column
+        updatedRow[6] = doneDate; // DoneDate column
+        
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+          range: `${SHEET_NAME}!A${rowNum}:H${rowNum}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [updatedRow] },
+        });
+        
+        console.log(`Successfully updated row ${rowNum}`);
+      } catch (err) {
+        console.error(`Failed to update row ${rowNum}:`, err.message);
+      }
+    }
+
+    res.json({ 
+      ok: true, 
+      message: `Updated ${matchingTickets.length} ticket(s) with issue "${ticketName}"`,
+      updatedCount: matchingTickets.length,
+      ticketName: ticketName
     });
 
-    res.json({ ok: true });
   } catch (err) {
+    console.error("UPDATE TICKET STATUS ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
