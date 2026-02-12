@@ -40,8 +40,32 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
     if (AssignedTo === req.user.name) return res.status(400).json({ error: "Cannot assign ticket to yourself" });
 
     const sheets = await getSheets();
-    // const ticketID = nanoid(6);
-    const ticketID =generateTicketID();
+    
+    // ============ SEQUENTIAL TICKET ID GENERATOR ============
+    // Get all existing ticket IDs
+    const idRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_HELPTICKET,
+      range: `${SHEET_NAME}!A:A`,
+    });
+
+    const allIds = idRes.data.values || [];
+    let maxNumber = 0;
+
+    // Find maximum number from existing IDs
+    for (let i = 1; i < allIds.length; i++) { // Start from 1 to skip header
+      const id = allIds[i][0];
+      if (id && id.startsWith('#')) {
+        const num = parseInt(id.substring(1), 10);
+        if (!isNaN(num) && num > maxNumber) {
+          maxNumber = num;
+        }
+      }
+    }
+
+    // Generate next ID
+    const nextIdNumber = maxNumber + 1;
+    const ticketID = `#${String(nextIdNumber).padStart(5, '0')}`;
+    // ========================================================
 
     const createdDate = formatDateDDMMYYYYHHMMSS();
     const status = "Pending";

@@ -34,6 +34,7 @@ function formatDateDDMMYYYYHHMMSS(date = new Date()) {
 }
 
 /* ================= CREATE TICKET ================= */
+/* ================= CREATE TICKET ================= */
 router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
   try {
     const { Issue } = req.body;
@@ -42,7 +43,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       return res.status(400).json({ error: "Issue required" });
 
     const sheets = await getSheets();
-    const createdDate = formatDateDDMMYYYYHHMMSS(); // IST
+    const createdDate = formatDateDDMMYYYYHHMMSS();
     const status = "Pending";
     const photoUrl = req.file ? req.file.path : "";
 
@@ -61,17 +62,42 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       return res.status(400).json({ error: "No MIS employees found" });
     }
 
+    // Get the last ticket ID from the sheet
+    const lastIdRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+      range: `${SHEET_NAME}!A:A`,
+    });
+
+    const allIds = lastIdRes.data.values || [];
+    let lastId = "#00000";
+    
+    if (allIds.length > 1) { // Skip header row
+      const lastRow = allIds[allIds.length - 1];
+      if (lastRow && lastRow[0]) {
+        lastId = lastRow[0];
+      }
+    }
+
+    // Generate next ID
+    let nextIdNumber = 1;
+    if (lastId !== "#00000") {
+      const numStr = lastId.substring(1); // Remove #
+      nextIdNumber = parseInt(numStr, 10) + 1;
+    }
+    
     // Create tickets for each MIS employee
     const ticketIDs = [];
     
     for (const emp of misEmployees) {
-      const ticketID = generateTicketID();
-      const empName = emp[1]; // Adjust based on your sheet structure
+      const empName = emp[1];
       
       // Skip if assigning to self
       if (empName === req.user.name) {
         continue;
       }
+      
+      // Format with leading zeros (5 digits)
+      const ticketID = `#${String(nextIdNumber).padStart(5, '0')}`;
       
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
@@ -81,8 +107,8 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
           values: [
             [
               ticketID,
-              req.user.name, // Creator
-              empName, // Assigned to MIS employee
+              req.user.name,
+              empName,
               Issue,
               status,
               createdDate,
@@ -94,6 +120,7 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
       });
       
       ticketIDs.push(ticketID);
+      nextIdNumber++; // Increment for next ticket
     }
 
     if (ticketIDs.length === 0) {
