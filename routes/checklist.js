@@ -632,4 +632,411 @@ router.delete("/:id", auth, async (req, res) => {
   }
 });
 
+
+
+
+// ======================================================
+// CREATE MASTER TEMPLATE + CURRENT MONTH REMAINING TASKS
+// ======================================================
+router.post("/create-template", auth, async (req, res) => {
+  try {
+    const { 
+      task,
+      freq,
+      dayOrDate,
+      employeeName
+    } = req.body;
+    
+    if (!task || !freq || !employeeName) {
+      return res.status(400).json({ error: "Task, Freq and employeeName are required" });
+    }
+    
+    const sheets = await getSheets();
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_CHECKLIST;
+    const spreadsheetIdUser = process.env.GOOGLE_SHEET_ID;
+
+    
+    // Get employee details from employees sheet
+
+    const empRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Employee!A2:H",
+    });
+
+    const employees = empRes.data.values || [];
+    const employee = employees.find(e => e[1] === employeeName);
+    console.log("employee:", employee);
+    
+    
+    const templateId = nanoid(8);
+    
+    // 1️⃣ Save to MasterTasks
+    const templateRow = [
+      templateId,
+      employeeName,
+      employee?.[1] || "", // Email
+      employee?.[6] || "", // Department
+      task,
+      freq,
+      dayOrDate || "",
+      new Date().toISOString(),
+      "active"
+    ];
+    
+    // Create MasterTasks sheet if not exists
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `MasterTasks!A:I`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [templateRow] }
+      });
+    } catch (err) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `MasterTasks!A1:I1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [["TemplateID", "Name", "Email", "Department", "Task", "Freq", "DayOrDate", "CreatedAt", "Status"]]
+        }
+      });
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `MasterTasks!A:I`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [templateRow] }
+      });
+    }
+    
+    // ====================================================
+    // 2️⃣ CREATE REMAINING TASKS FOR CURRENT MONTH
+    // ====================================================
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    const currentDate = today.getDate();
+    const monthEnd = new Date(currentYear, currentMonth, 0); // Last day of month
+    
+    // Fetch existing tasks to avoid duplicates
+    const existingRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `TestMaster!A2:K`,
+    });
+    const existingRows = existingRes.data.values || [];
+    
+    const createdTasks = [];
+    let datesToCreate = [];
+    
+    // Calculate dates based on frequency
+    switch(freq) {
+      case 'D': // DAILY - Today se lekar month end tak
+        for (let d = currentDate; d <= monthEnd.getDate(); d++) {
+          const plannedDate = `${String(d).padStart(2, '0')}/${String(currentMonth).padStart(2, '0')}/${currentYear} 23:59:59`;
+          datesToCreate.push(plannedDate);
+        }
+        break;
+        
+      case 'W': // WEEKLY - Remaining weeks in month
+        if (dayOrDate) {
+          const daysMap = {
+            'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+            'thursday': 4, 'friday': 5, 'saturday': 6
+          };
+          const targetDay = daysMap[dayOrDate.toLowerCase()];
+          
+          for (let d = currentDate; d <= monthEnd.getDate(); d++) {
+            const checkDate = new Date(currentYear, currentMonth - 1, d);
+            if (checkDate.getDay() === targetDay) {
+              const plannedDate = `${String(d).padStart(2, '0')}/${String(currentMonth).padStart(2, '0')}/${currentYear} 23:59:59`;
+              datesToCreate.push(plannedDate);
+            }
+          }
+        }
+        break;
+        
+      case 'M': // MONTHLY - Current month ka task (if date >= today)
+        if (dayOrDate) {
+          const targetDate = parseInt(dayOrDate);
+          if (targetDate >= currentDate && targetDate <= monthEnd.getDate()) {
+            const plannedDate = `${String(targetDate).padStart(2, '0')}/${String(currentMonth).padStart(2, '0')}/${currentYear} 23:59:59`;
+            datesToCreate.push(plannedDate);
+          } else if (targetDate < currentDate) {
+            // Agar date nikal gayi to kuch nahi, next month auto-generate hoga
+            console.log(`Date ${targetDate} already passed for this month`);
+          }
+        }
+        break;
+        
+      case 'Y': // YEARLY - Current year ka task (if date >= today)
+        if (dayOrDate) {
+          const targetDate = parseInt(dayOrDate);
+          if (targetDate >= currentDate && targetDate <= monthEnd.getDate()) {
+            const plannedDate = `${String(targetDate).padStart(2, '0')}/${String(currentMonth).padStart(2, '0')}/${currentYear} 23:59:59`;
+            datesToCreate.push(plannedDate);
+          }
+        }
+        break;
+    }
+    
+    // Create tasks for remaining dates
+    for (const plannedDateTime of datesToCreate) {
+      // Duplicate check
+      const alreadyExists = existingRows.some(row => 
+        row[0] === employeeName && 
+        row[5] === task && 
+        row[6] === plannedDateTime
+      );
+      
+      if (!alreadyExists) {
+        const newTaskId = nanoid(6);
+        
+        const newRow = [
+          employeeName,
+          employee?.[1] || "",
+          employee?.[2] || "",
+          newTaskId,
+          freq,
+          task,
+          plannedDateTime,
+          "",                      // Actual
+          "AUTO",                  // Source
+          templateId,              // Template ID
+          ""                       // Archive
+        ];
+        
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `TestMaster!A:K`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [newRow] }
+        });
+        
+        createdTasks.push({
+          taskId: newTaskId,
+          task,
+          planned: plannedDateTime
+        });
+      }
+    }
+    
+    // Response with summary
+    res.json({
+      success: true,
+      message: `✅ Template created + ${createdTasks.length} tasks for current month`,
+      templateId,
+      employeeName,
+      task,
+      freq,
+      dayOrDate: dayOrDate || "N/A",
+      currentMonthTasks: createdTasks,
+      note: createdTasks.length === 0 
+        ? "No remaining tasks for this month. Next month will auto-generate on 1st."
+        : `Created ${createdTasks.length} tasks for remaining days of this month`
+    });
+    
+  } catch (err) {
+    console.error("Create Template Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ======================================================
+// AUTO-GENERATE NEXT MONTH - COMPLETE API
+// ======================================================
+router.post("/auto-generate-next-month", async (req, res) => {
+  try {
+    // ✅ CRON JOB CHECK - Sirf internal call allow
+    const isCronJob = req.headers['x-cron-job'] === 'true';
+    
+    if (!isCronJob) {
+      return res.status(401).json({ error: 'Unauthorized - Only cron job can access' });
+    }
+    
+    console.log('📅 Auto-generate-next-month triggered by cron job');
+    
+    const sheets = await getSheets();
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID_CHECKLIST;
+    
+    // Next month calculate karo
+    const today = new Date();
+    let targetMonth = today.getMonth() + 2; // Next month
+    let targetYear = today.getFullYear();
+    
+    if (targetMonth > 12) {
+      targetMonth = 1;
+      targetYear = today.getFullYear() + 1;
+    }
+    
+    console.log(`📅 Generating for ${targetMonth}/${targetYear}`);
+    
+    // Get all active templates from MasterTasks
+    const templatesRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `MasterTasks!A2:I`,
+    });
+    
+    const templates = templatesRes.data.values || [];
+    const activeTemplates = templates.filter(t => t[8] === "active");
+    
+    if (activeTemplates.length === 0) {
+      return res.json({
+        success: true,
+        message: "No active templates found",
+        createdTasks: []
+      });
+    }
+    
+    // Month end date
+    const monthEnd = new Date(targetYear, targetMonth, 0);
+    
+    // Check existing tasks to avoid duplicates
+    const existingRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${MASTER_SHEET}!A2:K`,
+    });
+    const existingRows = existingRes.data.values || [];
+    
+    const createdTasks = [];
+    
+    // Process each template
+    for (const template of activeTemplates) {
+      const [templateId, name, email, dept, task, freq, dayOrDate] = template;
+      
+      let datesToCreate = [];
+      
+      // Calculate dates based on frequency
+      switch(freq) {
+        case 'D': // DAILY - All days
+          for (let d = 1; d <= monthEnd.getDate(); d++) {
+            const plannedDate = `${String(d).padStart(2, '0')}/${String(targetMonth).padStart(2, '0')}/${targetYear} 23:59:59`;
+            datesToCreate.push(plannedDate);
+          }
+          break;
+          
+        case 'W': // WEEKLY - Specific day
+          if (dayOrDate) {
+            const daysMap = {
+              'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+              'thursday': 4, 'friday': 5, 'saturday': 6
+            };
+            const targetDay = daysMap[dayOrDate.toLowerCase()];
+            
+            for (let d = 1; d <= monthEnd.getDate(); d++) {
+              const checkDate = new Date(targetYear, targetMonth - 1, d);
+              if (checkDate.getDay() === targetDay) {
+                const plannedDate = `${String(d).padStart(2, '0')}/${String(targetMonth).padStart(2, '0')}/${targetYear} 23:59:59`;
+                datesToCreate.push(plannedDate);
+              }
+            }
+          }
+          break;
+          
+        case 'M': // MONTHLY - Specific date
+          if (dayOrDate) {
+            const targetDate = parseInt(dayOrDate);
+            if (targetDate <= monthEnd.getDate()) {
+              const plannedDate = `${String(targetDate).padStart(2, '0')}/${String(targetMonth).padStart(2, '0')}/${targetYear} 23:59:59`;
+              datesToCreate.push(plannedDate);
+            } else {
+              // If date > month end, use last day of month
+              const plannedDate = `${String(monthEnd.getDate()).padStart(2, '0')}/${String(targetMonth).padStart(2, '0')}/${targetYear} 23:59:59`;
+              datesToCreate.push(plannedDate);
+            }
+          }
+          break;
+          
+        case 'Y': // YEARLY - Specific date
+          if (dayOrDate) {
+            const targetDate = parseInt(dayOrDate);
+            if (targetDate <= monthEnd.getDate()) {
+              const plannedDate = `${String(targetDate).padStart(2, '0')}/${String(targetMonth).padStart(2, '0')}/${targetYear} 23:59:59`;
+              datesToCreate.push(plannedDate);
+            }
+          }
+          break;
+      }
+      
+      // Create tasks for each date
+      for (const plannedDateTime of datesToCreate) {
+        // Check if already exists
+        const alreadyExists = existingRows.some(row => 
+          row[0] === name && 
+          row[5] === task && 
+          row[6] === plannedDateTime
+        );
+        
+        if (!alreadyExists) {
+          const newTaskId = nanoid(6);
+          
+          const newRow = [
+            name,                    // Name
+            email || "",             // Email
+            dept || "",              // Department
+            newTaskId,               // Task ID
+            freq,                    // Frequency
+            task,                    // Task
+            plannedDateTime,         // Planned date
+            "",                      // Actual (empty)
+            "AUTO",                  // Source
+            templateId,              // Template ID
+            ""                       // Archive
+          ];
+          
+          await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range: `${MASTER_SHEET}!A:K`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [newRow] }
+          });
+          
+          createdTasks.push({
+            taskId: newTaskId,
+            task,
+            planned: plannedDateTime,
+            freq
+          });
+        }
+      }
+    }
+    
+    // Log generation (optional)
+    try {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `GenerationLog!A:D`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[
+            targetMonth,
+            targetYear,
+            new Date().toISOString(),
+            createdTasks.length
+          ]]
+        }
+      });
+    } catch (logErr) {
+      console.log("Logging error:", logErr.message);
+    }
+    
+    console.log(`✅ Generated ${createdTasks.length} tasks for ${targetMonth}/${targetYear}`);
+    
+    res.json({
+      success: true,
+      message: `✅ Generated ${createdTasks.length} tasks for ${targetMonth}/${targetYear}`,
+      month: targetMonth,
+      year: targetYear,
+      totalCreated: createdTasks.length,
+      createdTasks: createdTasks.slice(0, 5) // First 5 tasks
+    });
+    
+  } catch (err) {
+    console.error("Auto Generate Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+
+
 module.exports = router;
