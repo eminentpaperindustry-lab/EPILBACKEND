@@ -10,6 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ======================================================
+// ✅ YEH LINE ADD KARNI HAI - Profile pictures ke liye
+// ======================================================
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // ROUTES
 const authRoutes = require("./routes/auth");
 const adminAuth = require("./routes/adminAuth");
