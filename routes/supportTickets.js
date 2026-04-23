@@ -112,6 +112,10 @@ router.post("/create", auth, parser.single("IssuePhoto"), async (req, res) => {
               photoUrl,            // H: Issuephoto
               "",                  // I: WorkBy
               "Pending",           // J: Taskcompletedapproval
+              "",                  // K: Reserved
+              "",                  // L: Reserved
+              "",                  // M: Problem
+              "",                  // N: Solution
             ]],
           },
         });
@@ -167,6 +171,8 @@ router.get("/created", auth, async (req, res) => {
         IssuePhoto: r[7] || "",
         WorkBy: r[8] || "",
         Taskcompletedapproval: r[9] || "Pending",
+        Problem: r[12] || "",
+        Solution: r[13] || "",
       }));
 
     console.log(`Found ${tickets.length} created tickets`);
@@ -217,6 +223,8 @@ router.get("/assigned", auth, async (req, res) => {
         IssuePhoto: r[7] || "",
         WorkBy: r[8] || "",
         Taskcompletedapproval: r[9] || "Pending",
+        Problem: r[12] || "",
+        Solution: r[13] || "",
       }));
     
     // For MIS users, apply special filtering
@@ -239,7 +247,7 @@ router.get("/assigned", auth, async (req, res) => {
   }
 });
 
-/* ================= UPDATE STATUS ================= */
+/* ================= UPDATE STATUS (MAIN ROUTE) ================= */
 router.patch("/status/:ticketID", auth, async (req, res) => {
   try {
     console.log("UPDATE STATUS - User:", req.user.name);
@@ -288,40 +296,9 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
       return res.status(404).json({ error: "Ticket not found" });
     }
 
-    console.log("Found Ticket:", {
-      TicketID: foundTicket[0],
-      Status: foundTicket[4],
-      WorkBy: foundTicket[8],
-      DoneDate: foundTicket[6],
-      TaskApproval: foundTicket[9],
-      CreatedBy: foundTicket[1],
-      AssignedTo: foundTicket[2]
-    });
-
     const ticketIssue = foundTicket[3];
     const currentStatus = foundTicket[4];
     const assignedTo = foundTicket[2];
-    const createdBy = foundTicket[1];
-    
-    // FIXED: Permission logic - Allow if:
-    // 1. User is assigned to the ticket (MIS doing their work)
-    // 2. OR User created the ticket (Doer approving/rejecting)
-    // 3. OR User is MIS and ticket is assigned to them
-
-
-    
-    // const canUpdate = (assignedTo === req.user.name) || (createdBy === req.user.name);
-    
-    // if (!canUpdate) {
-    //   console.log("Permission denied:", {
-    //     assignedTo,
-    //     createdBy,
-    //     userName: req.user.name
-    //   });
-    //   return res.status(403).json({ 
-    //     error: "You don't have permission to update this ticket. Only the assigned MIS user or the creator can update it." 
-    //   });
-    // }
     
     // Find ALL tickets with same issue
     const matchingTickets = [];
@@ -371,12 +348,11 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
       
       if (Status === "Approved") {
         taskApproval = "Approved";
-        newStatus = "Done"; // Keep status as Done but mark as approved
+        newStatus = "Done";
         console.log("Doer Approving ticket");
       }
       else if (Status === "Pending") {
         doneDate = "";
-        // workBy = "";
         taskApproval = "Pending";
         newStatus = "Pending";
         console.log("Doer Rejecting ticket");
@@ -397,7 +373,7 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
     // Update ALL matching tickets
     for (const ticket of matchingTickets) {
-      const rowNum = ticket.index + 2; // +2 because header row + 0-based index
+      const rowNum = ticket.index + 2;
       const updatedRow = [...ticket.row];
       
       updatedRow[4] = newStatus;      // E: Status
@@ -424,6 +400,94 @@ router.patch("/status/:ticketID", auth, async (req, res) => {
 
   } catch (err) {
     console.error("UPDATE STATUS ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ================= UPDATE DONE DETAILS (Problem & Solution) ================= */
+router.patch("/done-details/:ticketID", auth, async (req, res) => {
+  try {
+    console.log("UPDATE DONE DETAILS - User:", req.user.name);
+    console.log("Ticket ID:", req.params.ticketID);
+    console.log("Problem:", req.body.Problem);
+    console.log("Solution:", req.body.Solution);
+
+    const { Problem, Solution } = req.body;
+    
+    if (!Problem || !Solution) {
+      return res.status(400).json({ error: "Problem and Solution are required" });
+    }
+
+    const sheets = await getSheets();
+    
+    // Get all tickets
+    const data = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+      range: `${SHEET_NAME}!A2:Z`,
+    });
+
+    const rows = data.data.values || [];
+    
+    // Find the ticket
+    let foundTicket = null;
+    let ticketIndex = -1;
+    
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === req.params.ticketID) {
+        foundTicket = rows[i];
+        ticketIndex = i;
+        break;
+      }
+    }
+    
+    if (!foundTicket) {
+      return res.status(404).json({ error: "Ticket not found" });
+    }
+
+    const ticketIssue = foundTicket[3];
+    
+    // Find ALL tickets with same issue
+    const matchingTickets = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][3] && rows[i][3].trim() === ticketIssue.trim()) {
+        matchingTickets.push({ row: rows[i], index: i });
+      }
+    }
+
+    console.log(`Found ${matchingTickets.length} matching tickets`);
+    
+    // Update ALL matching tickets with Problem (M column) and Solution (N column)
+    for (const ticket of matchingTickets) {
+      const rowNum = ticket.index + 2;
+      const updatedRow = [...ticket.row];
+      
+      // Make sure array has at least 14 elements (A to N)
+      while (updatedRow.length < 14) {
+        updatedRow.push("");
+      }
+      
+      // M column (index 12) - Problem
+      updatedRow[12] = Problem;
+      // N column (index 13) - Solution
+      updatedRow[13] = Solution;
+      
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID_SUPPORTTICKET,
+        range: `${SHEET_NAME}!A${rowNum}:Z${rowNum}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [updatedRow] },
+      });
+    }
+
+    res.json({ 
+      ok: true, 
+      message: `Updated ${matchingTickets.length} ticket(s) with problem/solution`,
+      problem: Problem,
+      solution: Solution
+    });
+
+  } catch (err) {
+    console.error("UPDATE DONE DETAILS ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -460,6 +524,8 @@ router.get("/all", auth, async (req, res) => {
         IssuePhoto: r[7] || "",
         WorkBy: r[8] || "",
         Taskcompletedapproval: r[9] || "Pending",
+        Problem: r[12] || "",
+        Solution: r[13] || "",
       }));
 
     res.json({ ok: true, tickets });
@@ -560,6 +626,8 @@ router.get("/filter", auth, async (req, res) => {
           IssuePhoto: r[7] || "",
           WorkBy: r[8] || "",
           Taskcompletedapproval: r[9] || "",
+          Problem: r[12] || "",
+          Solution: r[13] || "",
         });
       });
 
