@@ -7,38 +7,34 @@ const path = require('path');
 dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-// ======================================================
-// ✅ YEH LINE ADD KARNI HAI - Profile pictures ke liye
-// ======================================================
+// CORS - Allow frontend domains
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ROUTES
-const authRoutes = require("./routes/auth");
-const adminAuth = require("./routes/adminAuth");
-const delegationsRoutes = require("./routes/delegations");
-const supportTicketsRoutes = require("./routes/supportTickets");
-const checklistRoutes = require("./routes/checklist");
-const employeeRouter = require("./routes/employee");
-const helpTicketsRouter = require("./routes/helpTickets");
-const additionalFeature = require("./routes/additionalFeature");
-const allDashboard = require('./routes/allDashboard');
-const whatsappRoutes = require("./routes/whatsapp.js");
+const errorHandler = require("./middleware/errorHandler");
 
-// API prefix
-app.use("/api/auth", authRoutes);
-app.use("/api/adminauth", adminAuth);
-app.use("/api/additionalfeature", additionalFeature);
-app.use("/api/delegations", delegationsRoutes);
-app.use("/api/support-tickets", supportTicketsRoutes);
-app.use("/api/checklist", checklistRoutes);
-app.use("/api/employee", employeeRouter);
-app.use("/api/helpTickets", helpTicketsRouter);
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/adminauth", require("./routes/adminAuth"));
+app.use("/api/additionalfeature", require("./routes/additionalFeature"));
 app.use("/api/delegations", require("./routes/delegations"));
-app.use("/api/allDashboard", allDashboard);
-app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/support-tickets", require("./routes/supportTickets"));
+app.use("/api/checklist", require("./routes/checklist"));
+app.use("/api/employee", require("./routes/employee"));
+app.use("/api/helpTickets", require("./routes/helpTickets"));
+app.use("/api/allDashboard", require("./routes/allDashboard"));
+app.use("/api/whatsapp", require("./routes/whatsapp.js"));
+app.use("/api/worklist", require("./routes/worklist"));
 
 // ======================================================
 // TRACKING FILE FOR AUTO-GENERATE
@@ -164,3 +160,8 @@ app.post('/admin/generate-now', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ======================================================
+// GLOBAL ERROR HANDLER (must be after all routes)
+// ======================================================
+app.use(errorHandler);
