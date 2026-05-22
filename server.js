@@ -34,7 +34,7 @@ app.use("/api/employee", require("./routes/employee"));
 app.use("/api/helpTickets", require("./routes/helpTickets"));
 app.use("/api/allDashboard", require("./routes/allDashboard"));
 app.use("/api/whatsapp", require("./routes/whatsapp.js"));
-app.use("/api/worklist", require("./routes/worklist"));
+app.use("/api/worklist", require("./routes/worklist"));  // ✅ WorkList route added
 
 // ======================================================
 // TRACKING FILE FOR AUTO-GENERATE
