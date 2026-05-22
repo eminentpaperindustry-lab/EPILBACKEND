@@ -6,14 +6,15 @@ const auth = require("../middleware/auth");
 const router = express.Router();
 const SHEET_NAME = "WorkList";
 
-const VALID_FREQUENCIES = ["Daily", "Weekly", "Monthly"];
+const VALID_FREQUENCIES = ["Daily", "Weekly", "Monthly", "Yearly"];
 
 async function readWorklistSheet() {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID_WORKLIST;
   if (!spreadsheetId) {
     throw new Error("GOOGLE_SHEET_ID_WORKLIST is not configured in .env");
   }
-  const range = `${SHEET_NAME}!A2:G`;
+  // Updated range to include new columns H and I (ScheduleDays, ScheduleDates)
+  const range = `${SHEET_NAME}!A2:I`;
 
   try {
     const sheets = await getSheets();
@@ -35,7 +36,9 @@ function mapWorklist(r) {
     Frequency: r[3] || "",
     WorkingTime: r[4] || "",
     TemplateLink: r[5] || "",
-    Remark: r[6] || ""
+    Remark: r[6] || "",
+    ScheduleDays: r[7] || "",    // For Weekly: "Monday,Wednesday,Friday"
+    ScheduleDates: r[8] || ""     // For Monthly/Yearly: "1,15,30" or "Jan 15"
   };
 }
 
@@ -84,7 +87,17 @@ router.get("/all", auth, async (req, res) => {
 // CREATE WORKLIST
 router.post("/", auth, async (req, res) => {
   try {
-    const { WorklistName, Frequency, WorkingTime, EmployeeName, TemplateLink, Remark } = req.body;
+    const { 
+      WorklistName, 
+      Frequency, 
+      WorkingTime, 
+      EmployeeName, 
+      TemplateLink, 
+      Remark,
+      ScheduleDays,      // NEW: For Weekly
+      ScheduleDates      // NEW: For Monthly/Yearly
+    } = req.body;
+    
     const finalEmpName = EmployeeName || req.user.name;
 
     if (!WorklistName || !WorklistName.trim()) {
@@ -96,6 +109,17 @@ router.post("/", auth, async (req, res) => {
     if (!WorkingTime || !WorkingTime.trim()) {
       return res.status(400).json({ error: "WorkingTime is required" });
     }
+    
+    // Validate based on frequency
+    if (Frequency === "Weekly" && !ScheduleDays) {
+      return res.status(400).json({ error: "Please select at least one day for Weekly frequency" });
+    }
+    if (Frequency === "Monthly" && !ScheduleDates) {
+      return res.status(400).json({ error: "Please select at least one date for Monthly frequency" });
+    }
+    if (Frequency === "Yearly" && !ScheduleDates) {
+      return res.status(400).json({ error: "Please select month and date for Yearly frequency" });
+    }
 
     const sheets = await getSheets();
     const spreadsheetId = process.env.GOOGLE_SHEET_ID_WORKLIST;
@@ -103,12 +127,19 @@ router.post("/", auth, async (req, res) => {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${SHEET_NAME}!A:G`,
+      range: `${SHEET_NAME}!A:I`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[
-          WorkListId, finalEmpName, WorklistName.trim(), Frequency, WorkingTime.trim(),
-          TemplateLink || "", Remark || ""
+          WorkListId, 
+          finalEmpName, 
+          WorklistName.trim(), 
+          Frequency, 
+          WorkingTime.trim(),
+          TemplateLink || "", 
+          Remark || "",
+          ScheduleDays || "",
+          ScheduleDates || ""
         ]],
       },
     });
@@ -123,7 +154,16 @@ router.post("/", auth, async (req, res) => {
 // UPDATE WORKLIST (DOER)
 router.put("/:id", auth, async (req, res) => {
   try {
-    const { WorklistName, Frequency, WorkingTime, TemplateLink, Remark } = req.body;
+    const { 
+      WorklistName, 
+      Frequency, 
+      WorkingTime, 
+      TemplateLink, 
+      Remark,
+      ScheduleDays,
+      ScheduleDates
+    } = req.body;
+    
     const rows = await readWorklistSheet();
     const idx = rows.findIndex((r) => r[0] === req.params.id);
     
@@ -138,12 +178,14 @@ router.put("/:id", auth, async (req, res) => {
     if (WorkingTime) rows[idx][4] = WorkingTime.trim();
     if (TemplateLink !== undefined) rows[idx][5] = TemplateLink || "";
     if (Remark !== undefined) rows[idx][6] = Remark || "";
+    if (ScheduleDays !== undefined) rows[idx][7] = ScheduleDays || "";
+    if (ScheduleDates !== undefined) rows[idx][8] = ScheduleDates || "";
 
     const sheets = await getSheets();
     const spreadsheetId = process.env.GOOGLE_SHEET_ID_WORKLIST;
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A${idx + 2}:G${idx + 2}`,
+      range: `${SHEET_NAME}!A${idx + 2}:I${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
     });
@@ -158,7 +200,17 @@ router.put("/:id", auth, async (req, res) => {
 // ADMIN: UPDATE ANY WORKLIST
 router.put("/admin/:id", auth, async (req, res) => {
   try {
-    const { WorklistName, Frequency, WorkingTime, EmployeeName, TemplateLink, Remark } = req.body;
+    const { 
+      WorklistName, 
+      Frequency, 
+      WorkingTime, 
+      EmployeeName, 
+      TemplateLink, 
+      Remark,
+      ScheduleDays,
+      ScheduleDates
+    } = req.body;
+    
     const rows = await readWorklistSheet();
     const idx = rows.findIndex((r) => r[0] === req.params.id);
     
@@ -170,12 +222,14 @@ router.put("/admin/:id", auth, async (req, res) => {
     if (EmployeeName) rows[idx][1] = EmployeeName.trim();
     if (TemplateLink !== undefined) rows[idx][5] = TemplateLink || "";
     if (Remark !== undefined) rows[idx][6] = Remark || "";
+    if (ScheduleDays !== undefined) rows[idx][7] = ScheduleDays || "";
+    if (ScheduleDates !== undefined) rows[idx][8] = ScheduleDates || "";
 
     const sheets = await getSheets();
     const spreadsheetId = process.env.GOOGLE_SHEET_ID_WORKLIST;
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A${idx + 2}:G${idx + 2}`,
+      range: `${SHEET_NAME}!A${idx + 2}:I${idx + 2}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [rows[idx]] },
     });
@@ -212,7 +266,7 @@ router.post("/bulk", auth, async (req, res) => {
         continue;
       }
       if (!wl.Frequency || !VALID_FREQUENCIES.includes(wl.Frequency)) {
-        errors.push({ row: i + 1, errors: ["Frequency must be Daily, Weekly, or Monthly"] });
+        errors.push({ row: i + 1, errors: ["Frequency must be Daily, Weekly, Monthly, or Yearly"] });
         continue;
       }
       if (!wl.WorkingTime || !wl.WorkingTime.trim()) {
@@ -232,12 +286,19 @@ router.post("/bulk", auth, async (req, res) => {
       const WorkListId = nanoid(8);
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${SHEET_NAME}!A:G`,
+        range: `${SHEET_NAME}!A:I`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
-            WorkListId, empName, wl.WorklistName.trim(), wl.Frequency, wl.WorkingTime.trim(),
-            wl.TemplateLink || "", wl.Remark || ""
+            WorkListId, 
+            empName, 
+            wl.WorklistName.trim(), 
+            wl.Frequency, 
+            wl.WorkingTime.trim(),
+            wl.TemplateLink || "", 
+            wl.Remark || "",
+            wl.ScheduleDays || "",
+            wl.ScheduleDates || ""
           ]],
         },
       });
