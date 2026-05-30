@@ -31,11 +31,11 @@ function invalidateSupportCache() {
 async function getUserDepartment(name) {
   const sheets = await getSheets();
   const empRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID, range: "Employee!A2:H",
+    spreadsheetId: process.env.GOOGLE_SHEET_ID, range: "Employee!A2:O",
   });
   const employees = empRes.data.values || [];
   const user = employees.find(e => e[1] === name);
-  return user ? user[4] : "";
+  return user ? user[4] : "";  // Column 4 (index 4) is Department
 }
 
 function mapTicket(r) {
@@ -52,6 +52,7 @@ function mapTicket(r) {
     Taskcompletedapproval: r[9] || "Pending",
     Problem: r[12] || "",
     Solution: r[13] || "",
+    Department: r[14] || "",  // Column O (index 14) - Ticket creator's department
   };
 }
 
@@ -77,10 +78,19 @@ router.post("/create", auth, parser.single("IssuePhoto"), asyncHandler(async (re
   const createdDate = formatDateIST();
   const photoUrl = req.file ? req.file.path : "";
 
+  // Get employees data including department
   const empRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID, range: "Employee!A2:H",
+    spreadsheetId: process.env.GOOGLE_SHEET_ID, range: "Employee!A2:O",
   });
   const employees = empRes.data.values || [];
+  
+  // Get current user's department (jo ticket create kar raha hai)
+  const currentUser = employees.find(emp => emp[1] === req.user.name);
+  const userDepartment = currentUser ? currentUser[4] : "";  // Column 4 is Department
+  
+  console.log("Creating ticket for user:", req.user.name, "Department:", userDepartment);
+  
+  // Get all MIS employees (excluding current user if they are MIS)
   const misEmployees = employees.filter(emp => emp[4] === "MIS" && emp[1] !== req.user.name);
 
   if (!misEmployees.length) return res.status(400).json({ error: "No MIS employees found to assign tickets" });
@@ -106,14 +116,28 @@ router.post("/create", auth, parser.single("IssuePhoto"), asyncHandler(async (re
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
-            ticketID, req.user.name, emp[1], Issue, "Pending", createdDate,
-            "", photoUrl, "", "Pending", "", "", "", ""
+            ticketID,                    // A: TicketID
+            req.user.name,               // B: CreatedBy
+            emp[1],                      // C: AssignedTo
+            Issue,                       // D: Issue
+            "Pending",                   // E: Status
+            createdDate,                 // F: CreatedDate
+            "",                          // G: DoneDate
+            photoUrl,                    // H: IssuePhoto
+            "",                          // I: WorkBy
+            "Pending",                   // J: Taskcompletedapproval
+            "",                          // K: 
+            "",                          // L: 
+            "",                          // M: Problem
+            "",                          // N: Solution
+            userDepartment               // O: Department (Ticket creator ka department)
           ]],
         },
       });
       ticketIDs.push(ticketID);
       nextIdNumber++;
     } catch (err) {
+      console.error("Error creating ticket for:", emp[1], err);
       errors.push(`Failed for ${emp[1]}`);
     }
   }
@@ -122,7 +146,8 @@ router.post("/create", auth, parser.single("IssuePhoto"), asyncHandler(async (re
   invalidateSupportCache();
 
   res.json({
-    ok: true, ticketIDs,
+    ok: true, 
+    ticketIDs,
     message: `${ticketIDs.length} ticket(s) created successfully`,
     errors: errors.length > 0 ? errors : undefined
   });
