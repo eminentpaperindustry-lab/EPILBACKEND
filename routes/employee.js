@@ -2,7 +2,7 @@ const express = require("express");
 const { getSheets } = require("../googleSheetsClient");
 const auth = require("../middleware/auth");
 
-const router = express.Router();
+const router = express.Router(); 
 
 // GET ALL EMPLOYEE NAMES
 router.get("/all", auth, async (req, res) => {
@@ -21,6 +21,27 @@ router.get("/all", auth, async (req, res) => {
     res.json(employees);
   } catch (err) {
     console.error("EMPLOYEE ALL ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET ALL ADMIN NAMES
+router.get("/allAdmin", auth, async (req, res) => {
+  try {
+    const sheets = await getSheets();
+    const adminRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Admin!A2:B",
+    });
+
+    const admins = (adminRes.data.values || []).map(a => ({
+      employeeID: a[0],
+      name: a[1],
+    }));
+
+    res.json(admins);
+  } catch (err) {
+    console.error("ADMIN ALL ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
