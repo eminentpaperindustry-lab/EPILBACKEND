@@ -8,6 +8,9 @@ dotenv.config();
 
 const app = express();
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // CORS - Allow frontend domains
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
