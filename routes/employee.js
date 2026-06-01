@@ -10,12 +10,13 @@ router.get("/all", auth, async (req, res) => {
     const sheets = await getSheets();
     const empRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Employee!A2:B",
+      range: "Employee!A2:C",
     });
 
     const employees = (empRes.data.values || []).map(e => ({
       employeeID: e[0],
       name: e[1],
+      number: e[2] || "",
     }));
 
     res.json(employees);
