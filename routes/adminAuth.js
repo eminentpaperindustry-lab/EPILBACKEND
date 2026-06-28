@@ -93,7 +93,7 @@ router.post("/admin/login", asyncHandler(async (req, res) => {
       name: user[1],
       department: user[4],
       mobile: user[2],
-      company: user[7] || "",
+      company: user[6] || "",
       sheet: `${user[1]}_Delegations`,
     },
   });
